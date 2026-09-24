@@ -14,6 +14,7 @@ from external import DiscordGateway, MailSender
 
 from .auth_flow_controller import AuthFlowController
 from .export_controller import ExportController
+from .import_controller import ImportController
 from .onboarding_controller import OnboardingController
 from .role_controller import RoleController
 from .student_controller import StudentController
@@ -36,6 +37,7 @@ class BotControllers:
         student_edit (StudentEditController): 学生情報の手動変更
         student_delete (StudentDeleteController): 学生情報の削除
         export (ExportController): 学生情報の書き出し
+        student_import (ImportController): CSV からの一括登録
     """
 
     student: StudentController
@@ -46,6 +48,7 @@ class BotControllers:
     student_edit: StudentEditController
     student_delete: StudentDeleteController
     export: ExportController
+    student_import: ImportController
 
 
 def build_controllers(
@@ -76,6 +79,7 @@ def build_controllers(
     student_edit = StudentEditController(student, role)
     student_delete = StudentDeleteController(student, role)
     export = ExportController(database, today)
+    student_import = ImportController(student)
     return BotControllers(
         student=student,
         auth_flow=auth_flow,
@@ -85,4 +89,5 @@ def build_controllers(
         student_edit=student_edit,
         student_delete=student_delete,
         export=export,
+        student_import=student_import,
     )

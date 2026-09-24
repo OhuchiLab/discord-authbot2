@@ -9,6 +9,7 @@
 | `auth_session` | DM 認証手続きの途中経過 (`AuthSession`, `AuthStep`) |
 | `role_definition` | Bot が扱う Discord ロールの定義 (`RoleDefinition` と各ロール定数) |
 | `student_edit` | 学生情報の手動変更の内容と結果、削除の結果 (`StudentEdit`, `StudentEditResult`, `StudentDeleteResult`) |
+| `student_import` | 一括登録の入力内容と、CSV を読み取った結果 (`NewStudent`, `ImportRow`, `StudentImportPlan`) |
 | `year_update` | 現役メンバーの年度更新の候補と結果 (`YearUpdatePlan`, `YearUpdateCandidate`, `YearUpdateResult`) |
 """
 
@@ -24,5 +25,6 @@ from .role_definition import (
     RoleDefinition,
 )
 from .student_edit import FIELD_LABELS, StudentDeleteResult, StudentEdit, StudentEditResult
+from .student_import import ImportRow, NewStudent, StudentImportPlan
 from .student_info import StudentInfo
 from .year_update import YearUpdateCandidate, YearUpdatePlan, YearUpdateResult

@@ -86,6 +86,22 @@ class DatabaseController:
         self._students.append(student)
         self.save()
 
+    def add_many(self, students: list[StudentInfo]) -> None:
+        """
+        複数の学生情報をまとめて追加し、1 回だけファイルに保存する (一括登録で使う)
+
+        Args:
+            students (list[StudentInfo]): 追加する学生情報
+
+        Raises:
+            ValueError: 同じ uuid の学生情報がすでに存在する、または一覧の中で重複する場合 (何も追加しない)
+        """
+        uuids = [student.uuid for student in students]
+        if len(set(uuids)) != len(uuids) or any(self.find_by_uuid(uuid) is not None for uuid in uuids):
+            raise ValueError("uuid が重複しています")
+        self._students.extend(students)
+        self.save()
+
     def update(self, student: StudentInfo) -> None:
         """
         uuid が一致する学生情報を置き換えてファイルに保存する

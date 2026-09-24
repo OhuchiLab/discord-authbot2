@@ -6,7 +6,7 @@ import dataclasses
 import uuid
 
 from database import DatabaseController
-from several_types import Grade, StudentEdit, StudentInfo
+from several_types import Grade, NewStudent, StudentEdit, StudentInfo
 from utils import (
     is_valid_email,
     is_valid_student_number,
@@ -101,24 +101,68 @@ class StudentController:
         Raises:
             StudentRegistrationError: 入力値の形式が不正、または学籍番号・メールアドレスが登録済みの場合
         """
-        problem = self._find_format_problem(name, student_number, email) or self._find_duplicate_problem(
-            student_number, email
-        )
-        if problem:
-            raise StudentRegistrationError(problem)
+        entry = NewStudent(name=name, student_number=student_number, grade=grade, email=email)
+        return self.register_students([entry])[0]
 
-        name = normalize_input(name)
-        student_number = normalize_student_number(student_number)
-        email = normalize_email(email)
-        student = StudentInfo(
-            uuid=str(uuid.uuid4()),
-            name=name,
-            student_number=student_number,
-            email=email,
-            grade=grade,
-        )
-        self._database.add(student)
-        return student
+    def register_students(self, entries: list[NewStudent]) -> list[StudentInfo]:
+        """
+        複数の学生情報をまとめて登録する (1 回の保存で全員を登録する)
+
+        Args:
+            entries (list[NewStudent]): 登録する学生の入力内容
+
+        Returns:
+            list[StudentInfo]: 登録した学生情報 (entries と同じ順)
+
+        Raises:
+            StudentRegistrationError: 1 人でも問題があれば (何も登録しない)。メッセージは最初の問題
+        """
+        problems = self.find_registration_problems(entries)
+        if problems:
+            raise StudentRegistrationError(problems[min(problems)])
+
+        students = [
+            StudentInfo(
+                uuid=str(uuid.uuid4()),
+                name=normalize_input(entry.name),
+                student_number=normalize_student_number(entry.student_number),
+                email=normalize_email(entry.email),
+                grade=entry.grade,
+            )
+            for entry in entries
+        ]
+        self._database.add_many(students)
+        return students
+
+    def find_registration_problems(self, entries: list[NewStudent]) -> dict[int, str]:
+        """
+        まとめて登録する前に、1 人ずつ問題を調べる。登録はしない
+
+        調べること: 値の形式、登録済みの学生との重複、一緒に登録する学生どうしの重複 (後に出てきた方を問題とする)
+
+        Args:
+            entries (list[NewStudent]): 登録する学生の入力内容
+
+        Returns:
+            dict[int, str]: {entries の添字: 問題の説明}。問題が無ければ空の辞書
+        """
+        problems: dict[int, str] = {}
+        seen_student_numbers: set[str] = set()
+        seen_emails: set[str] = set()
+        for index, entry in enumerate(entries):
+            student_number = normalize_student_number(entry.student_number)
+            email = normalize_email(entry.email)
+            problem = self._find_format_problem(entry.name, entry.student_number, entry.email)
+            problem = problem or self._find_duplicate_problem(entry.student_number, entry.email)
+            if problem is None and student_number in seen_student_numbers:
+                problem = f"学籍番号 {student_number} が、一緒に登録する学生の中で重複しています。"
+            if problem is None and email in seen_emails:
+                problem = f"メールアドレス {email} が、一緒に登録する学生の中で重複しています。"
+            if problem is not None:
+                problems[index] = problem
+            seen_student_numbers.add(student_number)
+            seen_emails.add(email)
+        return problems
 
     def find_matching_student(
         self, name: str, student_number: str, grade: Grade, email: str

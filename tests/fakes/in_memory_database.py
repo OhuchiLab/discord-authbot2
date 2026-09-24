@@ -37,6 +37,13 @@ class InMemoryDatabase:
         self._students.append(student)
         self.save()
 
+    def add_many(self, students: list[StudentInfo]) -> None:
+        uuids = [student.uuid for student in students]
+        if len(set(uuids)) != len(uuids) or any(self.find_by_uuid(uuid) is not None for uuid in uuids):
+            raise ValueError("uuid が重複しています")
+        self._students.extend(students)
+        self.save()
+
     def update(self, student: StudentInfo) -> None:
         for index, current in enumerate(self._students):
             if current.uuid == student.uuid:

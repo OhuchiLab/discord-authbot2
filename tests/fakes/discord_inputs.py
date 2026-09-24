@@ -37,6 +37,21 @@ class FakeDiscordMessage:
 
 
 @dataclass
+class FakeAttachment:
+    """スラッシュコマンドに添付されたファイル"""
+
+    filename: str
+    data: bytes
+
+    @property
+    def size(self) -> int:
+        return len(self.data)
+
+    async def read(self) -> bytes:
+        return self.data
+
+
+@dataclass
 class SentResponse:
     """
     インタラクションへの応答 1 件分の記録

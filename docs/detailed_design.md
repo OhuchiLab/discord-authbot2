@@ -29,6 +29,8 @@ discord-authbot2/
 │       │   ├── delete_student.py      # /delete_student
 │       │   ├── delete_student_view.py # /delete_student の確認画面 (削除・キャンセルのボタン)
 │       │   ├── export_students.py     # /export_students
+│       │   ├── import_students.py     # /import_students
+│       │   ├── import_students_view.py # /import_students の確認画面 (登録・キャンセルのボタン)
 │       │   ├── edit_student.py        # /edit_student
 │       │   ├── edit_student_view.py   # /edit_student の確認画面 (確定・キャンセルのボタン)
 │       │   ├── update_grades.py       # /update_grades
@@ -40,6 +42,7 @@ discord-authbot2/
 │       ├── controllers/       # 業務ロジック (Discord に依存しない)
 │       │   ├── bot_controllers.py
 │       │   ├── export_controller.py
+│       │   ├── import_controller.py
 │       │   ├── onboarding_controller.py
 │       │   ├── auth_flow_controller.py
 │       │   ├── student_controller.py
@@ -60,6 +63,7 @@ discord-authbot2/
 │       │   ├── exported_file.py
 │       │   ├── role_definition.py
 │       │   ├── student_edit.py
+│       │   ├── student_import.py
 │       │   └── year_update.py
 │       └── utils/             # 便利関数
 │           ├── config.py
@@ -177,6 +181,7 @@ classDiagram
         +find_by_uuid(uuid) StudentInfo
         +find_by_discord_id(discord_id) StudentInfo
         +add(student)
+        +add_many(students)
         +update(student)
         +delete(uuid)
         +completed_fiscal_years() set~int~
@@ -264,6 +269,7 @@ classDiagram
 | `/register` | `register.py` | `name`, `student_number`, `grade` (選択式), `email` | `defer` → `RoleController.is_admin()` → `StudentController.register_student()` → 結果を返す |
 | `/auth` | `auth.py` | なし | `defer` → `OnboardingController.request_auth()` の戻り値を返す |
 | `/delete_student` | `delete_student.py` | 対象: `student_number` または `member` (どちらか一方) | `defer` → `RoleController.is_admin()` → `StudentDeleteController.prepare()` → 確認画面 (`StudentDeleteView`) を表示 |
+| `/import_students` | `import_students.py` | `file` (CSV の添付、必須) | `defer` → `RoleController.is_admin()` → 拡張子 (.csv) と大きさ (1MB まで) の確認 → `ImportController.parse()` → 問題があれば一覧を表示 (最大 20 件、2000 文字以内)、無ければ確認画面 (`StudentImportView`) を表示 |
 | `/export_students` | `export_students.py` | `format` (CSV / msgpack、省略すると CSV) | `defer` → `RoleController.is_admin()` → `ExportController.export_csv()` / `export_msgpack()` → ファイルを添付して返す。誰が書き出したかをログに残す |
 | `/edit_student` | `edit_student.py` | 対象: `student_number` または `member` (どちらか一方)<br/>変更: `new_name`, `new_student_number`, `new_grade` (選択式), `new_email`, `unlink_discord` (真偽値) | `defer` → `RoleController.is_admin()` → `StudentEditController.prepare()` → 確認画面 (`StudentEditView`) を表示 |
 | `/list_students` | `list_students.py` | `grade` (選択式、省略可), `status` (認証済み / 未認証、省略可) | `defer` → `RoleController.is_admin()` → `StudentController.list_students()` → 一覧 (`StudentListView`) を表示。該当者がいなければ「条件に合う学生はいません。」 |
@@ -282,6 +288,12 @@ classDiagram
 - 1 ページ 20 人 (`PAGE_SIZE`)。1 ページに収まる場合はボタンを付けない。
 - `show_page(interaction, page)`: ◀ 前へ / 次へ ▶ ボタンから呼ばれ、ページを切り替える。
 - `interaction_check(interaction)`: `/list_students` を実行した管理者以外の操作は受け付けない。
+
+#### `import_students_view.py` — `StudentImportView(discord.ui.View)`
+
+`/import_students` の確認画面。登録する学生を「氏名 | 学籍番号 | 学年 | メールアドレス」(登録される形に正規化して) で最大 30 人表示し、
+それより多い分は「…ほか N 人」とまとめる。操作 (`confirm` = 登録する / `cancel` / `on_timeout` / `interaction_check`) は `StudentEditView` と同じ。
+`describe_errors(errors)` は CSV の問題の一覧を、Discord のメッセージの上限に収まるように作る。
 
 #### `delete_student_view.py` — `StudentDeleteView(discord.ui.View)`
 
@@ -427,6 +439,8 @@ stateDiagram-v2
 | `find_matching_student` | 全件から 氏名・学籍番号・学年・メール がすべて一致するものを返す (正規化して比較) | — |
 | `find_by_uuid` / `find_by_discord_id` | `DatabaseController` の同名メソッドを呼ぶ | — |
 | `list_students(grade=None, authenticated=None)` | 学生情報の一覧を、学年順 (`Grade` の定義順)・同じ学年の中は学籍番号順で返す。学年と認証の状態 (Discord と紐付いているか) で絞り込める | — |
+| `register_students(entries)` | `find_registration_problems()` で全員を確認し、問題が無ければ `DatabaseController.add_many()` で 1 回の保存でまとめて登録する。`register_student()` もこれを使う | `StudentRegistrationError` (1 人でも問題があれば何も登録しない) |
+| `find_registration_problems(entries)` | 1 人ずつ、形式・登録済みとの重複・一緒に登録する学生どうしの重複を調べ、`{添字: 問題}` を返す。登録はしない | — |
 | `find_by_student_number` | 学籍番号が一致する学生情報を返す (正規化して比較) | — |
 | `find_target(student_number=None, discord_id=None)` | 管理者が指定した対象を、学籍番号か Discord ID のどちらか一方で探す (`/edit_student`・`/delete_student` で共通) | `StudentNotFoundError` (指定が 0 個・2 個 / 見つからない) |
 | `delete_student(student)` | 保存されている学生情報が `student` と同じか (確認中に変更・削除されていないか) を確認して `DatabaseController.delete()` | `StudentDeleteError` |
@@ -460,6 +474,21 @@ stateDiagram-v2
 
 戻り値 `StudentEditResult` には、変更後の学生情報、Discord に反映したか、サーバーにいなかったか、うまくいかなかった説明が入る。
 Discord への反映に失敗しても学生情報の変更は取り消さない。
+
+#### `import_controller.py` — `ImportController`
+
+CSV からの一括登録 (F15) を担当する。
+
+| 定数 | 内容 |
+| --- | --- |
+| `REQUIRED_COLUMNS` | 必要な列: 氏名, 学籍番号, 学年, メールアドレス |
+| `ENCODINGS` | 試す文字コード: `utf-8-sig` (BOM の有無どちらも) → `cp932` (Shift_JIS) |
+| `MAX_ROWS` | 1 回で登録できる人数 (500) |
+
+| メソッド | 処理 | 例外 (`StudentImportError`) |
+| --- | --- | --- |
+| `parse(data)` | 1. 文字コードを判定して読む<br/>2. 1 行目の見出しから列の位置を決める<br/>3. 空の行を飛ばし、学年を `Grade.parse()` で読む (読めなければその行の問題)<br/>4. CSV の中での学籍番号・メールアドレスの重複を調べる (後の行を問題とし、「N 行目と同じ」と示す)<br/>5. 残りを `StudentController.find_registration_problems()` で調べる<br/>→ `StudentImportPlan` (登録する行と、行番号順の問題の一覧) を返す。**登録はしない** | 空 / 文字コード / 列が足りない / 学生がいない / 多すぎる |
+| `commit(plan)` | 問題が無ければ `StudentController.register_students()` で全員をまとめて登録する | 計画に問題がある / 確認中に重複が生じた (いずれも何も登録しない) |
 
 #### `export_controller.py` — `ExportController`
 
@@ -512,6 +541,7 @@ Discord の変更に失敗しても学生情報の削除は取り消さない。
 - 追加・更新のたびに `save()` でファイル全体を書き直す。
 - 入力チェックや重複判定は行わない (`StudentController` の責務)。ただし uuid の重複追加と、存在しない uuid の更新は例外にする。
 - `delete(uuid)` は学生情報を削除して保存する。存在しない uuid は `KeyError`。
+- `add_many(students)` は複数の学生情報をまとめて追加し、1 回だけ保存する (バックアップも 1 つ)。uuid が重複すれば `ValueError` で何も追加しない。
 - 現役更新を実行済みの年度 (`completed_fiscal_years()`) も同じファイルに保存する。
 - `commit_year_update(students, fiscal_year)` は、学生情報の置き換えと年度の記録を **1 回の保存でまとめて** 行う。
   年度が実行済み (`ValueError`) や存在しない uuid (`KeyError`) の場合は何も変更しない。
@@ -628,6 +658,7 @@ discord.py の例外は、次の例外に変換して送出する (すべて `Di
 | `auth_session.py` | `AuthStep` (Enum), `AuthSession` (dataclass) | 認証手続きの段階と途中経過 |
 | `role_definition.py` | `RoleDefinition` と各ロール定数 | ロール名・色の一覧。**ロールの変更はこのファイルだけで行う** |
 | `student_edit.py` | `StudentEdit`, `StudentEditResult`, `StudentDeleteResult` (frozen dataclass), `FIELD_LABELS` | 手動変更の内容 (変更前・変更後) と結果、削除の結果。`changed_fields()` は変わる項目の表示名、`unlinks_discord` は紐付けを解除する変更か |
+| `student_import.py` | `NewStudent`, `ImportRow`, `StudentImportPlan` (frozen dataclass) | 登録する学生 1 人分の入力内容、CSV の 1 行 (行番号付き)、CSV を読み取った結果 (登録する行と問題の一覧) |
 | `exported_file.py` | `ExportedFile` (frozen dataclass) | 書き出したファイル (ファイル名・中身・人数) |
 | `year_update.py` | `YearUpdateCandidate`, `YearUpdatePlan` (dataclass), `YearUpdateResult` (frozen dataclass) | 現役更新の候補 (1 人分)・計画 (一覧)・確定結果。`is_changed` は既定の更新先から変更されたか |
 

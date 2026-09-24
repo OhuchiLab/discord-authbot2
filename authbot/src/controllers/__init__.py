@@ -7,6 +7,7 @@ Discord の操作は `external.DiscordGateway`、データの保存は `database
 | モジュール | 内容 |
 | --- | --- |
 | `export_controller` | 学生情報の CSV / msgpack への書き出し (`ExportController`) |
+| `import_controller` | CSV からの学生情報の一括登録 (`ImportController`) |
 | `bot_controllers` | コントローラー一式の組み立て (`build_controllers`, `BotControllers`) |
 | `onboarding_controller` | 参加から認証完了までの一連の流れ (`OnboardingController`) |
 | `auth_flow_controller` | DM での対話形式の認証手続き (`AuthFlowController`) |
@@ -20,6 +21,7 @@ Discord の操作は `external.DiscordGateway`、データの保存は `database
 from .auth_flow_controller import AuthFlowController, AuthReply
 from .bot_controllers import BotControllers, build_controllers
 from .export_controller import ExportController
+from .import_controller import ImportController, StudentImportError
 from .onboarding_controller import OnboardingController
 from .role_controller import RoleController
 from .student_controller import (

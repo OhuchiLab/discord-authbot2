@@ -14,7 +14,7 @@ from controllers import (
     StudentNotFoundError,
     StudentRegistrationError,
 )
-from several_types import Grade
+from several_types import Grade, NewStudent
 from tests.fakes import InMemoryDatabase
 
 
@@ -267,3 +267,53 @@ def test_すでに削除されていたらエラー(controller):
     controller.delete_student(student)
     with pytest.raises(StudentDeleteError, match="やり直してください"):
         controller.delete_student(student)
+
+
+# ----------------------------------------------------------------------
+# まとめて登録 (find_registration_problems / register_students)
+# ----------------------------------------------------------------------
+
+
+def new(name: str, student_number: str, email: str, grade: Grade = Grade.B4) -> NewStudent:
+    return NewStudent(name=name, student_number=student_number, grade=grade, email=email)
+
+
+def test_まとめて登録すると1回の保存で全員を登録する(controller, database):
+    save_count = database.save_count
+
+    students = controller.register_students(
+        [new("山田 太郎", "ab123456", "Yamada@shizuoka.ac.jp"), new("鈴木 花子", "CD123456", "suzuki@shizuoka.ac.jp")]
+    )
+
+    assert [(s.student_number, s.email) for s in students] == [
+        ("AB123456", "yamada@shizuoka.ac.jp"),
+        ("CD123456", "suzuki@shizuoka.ac.jp"),
+    ]
+    assert database.get_all() == students
+    assert database.save_count == save_count + 1
+
+
+def test_まとめて登録する前に全員の問題を行ごとに調べられる(controller):
+    register_yamada(controller)
+
+    problems = controller.find_registration_problems(
+        [
+            new("鈴木 花子", "CD123456", "suzuki@shizuoka.ac.jp"),  # 0: 問題なし
+            new("佐藤 次郎", "1234", "sato@shizuoka.ac.jp"),  # 1: 形式
+            new("田中 三郎", "ab123456", "tanaka@shizuoka.ac.jp"),  # 2: 登録済みと重複
+            new("鈴木 次郎", "cd123456", "jiro@shizuoka.ac.jp"),  # 3: 一覧の中で重複 (0 と)
+            new("鈴木 三郎", "EF123456", "SUZUKI@shizuoka.ac.jp"),  # 4: 一覧の中でメールが重複 (0 と)
+        ]
+    )
+
+    assert set(problems) == {1, 2, 3, 4}
+    assert "英数字 8 文字" in problems[1]
+    assert problems[2] == "学籍番号 AB123456 はすでに登録されています。"
+    assert "CD123456" in problems[3] and "重複" in problems[3]
+    assert "suzuki@shizuoka.ac.jp" in problems[4] and "重複" in problems[4]
+
+
+def test_問題があればまとめて登録せず何も保存しない(controller, database):
+    with pytest.raises(StudentRegistrationError):
+        controller.register_students([new("山田 太郎", "AB123456", "a@shizuoka.ac.jp"), new("鈴木", "1234", "b@shizuoka.ac.jp")])
+    assert database.get_all() == []

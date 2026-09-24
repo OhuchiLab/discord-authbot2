@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 単体 | `tests/unit/<パッケージ>/` | 1 つのモジュール (クラス・関数) の細かい振る舞いと境界値 | 対象のモジュール、値オブジェクト (`several_types`, `utils`)、副作用の無いコントローラー | ファイル (`InMemoryDatabase`)、Discord、SMTP、時計 | 常に |
 | API | `tests/api/` | 1 つのパッケージが `__init__.py` で公開している I/F の約束事 (契約) | パッケージの内部と、その下の層 (`database` は一時フォルダの実ファイル、`MailSender` はローカルの SMTP サーバー) | Discord (本物が無いため) | 常に |
-| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F14 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
+| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F15 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
 | システム | `tests/system/` + 本書 7 章の手順書 | 本物の環境で Bot 全体が動くこと | すべて (テスト用 Discord サーバー、テスト用 SMTP) | なし | リリース前に手動で |
 
 ### 2.1 各階層で確認すること / しないこと
@@ -219,7 +219,7 @@ python -m pytest tests/system -v
 | --- | --- | --- |
 | ST-A01 | Bot がテスト用サーバーに参加している | 自動 |
 | ST-A02 | Bot が使うロールがすべてサーバーにある (無ければ作成される) | 自動 |
-| ST-A03 | スラッシュコマンド 8 つがサーバーに登録されている | 自動 |
+| ST-A03 | スラッシュコマンド 9 つがサーバーに登録されている | 自動 |
 | ST-A04 | テスト担当者に DM を送れる | 自動 + 担当者の Discord に DM が届いたことを目視 |
 | ST-A05 | 認証メールを送れる | 自動 + Mailpit にメールが届いたことを目視 |
 
@@ -253,6 +253,8 @@ python -m pytest tests/system -v
 | ST-M22 | F12 | 管理者役で別の学生を `/register` で登録し、`/delete_student student_number:(その学籍番号)` → [削除する] | 「〇〇 さんの学生情報を削除しました。」。`/list_students` に表示されなくなる | |
 | ST-M23 | F13 | 管理者役で `/export_students`、続けて `/export_students format:msgpack` | 自分だけに CSV / msgpack のファイルが届く。CSV を Excel で開いても文字化けしない | |
 | ST-M24 | F14 | `data/system-test/backups/` を確認する | ここまでの操作のたびに `students-日時.msgpack` が増えている。Bot を止め、1 つ前のコピーを `data/system-test/students.msgpack` に上書きして起動すると、`/list_students` がその時点の内容になる | |
+| ST-M25 | F15 | `docs/templates/import_students.csv` を Excel で開き、2 人分を入力して「CSV (コンマ区切り)」で保存 → 管理者役で `/import_students file:(その CSV)` → [登録する] | 確認画面に 2 人が表示され、確定すると「2 人の学生情報を登録しました。」。`/list_students` に表示される | |
+| ST-M26 | F15 | 学籍番号を 7 文字にした行を含む CSV で `/import_students` | 「N 行目: 学籍番号は英数字 8 文字で…」と表示され、何も登録されない | |
 
 ## 8. 機能とテストの対応表
 
@@ -272,6 +274,7 @@ python -m pytest tests/system -v
 | F12 学生情報の削除 | `unit/controllers/test_student_delete_controller.py`, `test_student_controller.py`, `unit/database/test_database_controller.py` | `test_database_api.py` | `test_f12_delete_student.py` | ST-M22 |
 | F13 学生情報の書き出し | `unit/controllers/test_export_controller.py` | `test_commands_api.py` | `test_f13_export_students.py` | ST-M23 |
 | F14 自動バックアップ | `unit/database/test_database_backup.py`, `unit/utils/test_config.py` | — | `test_f14_backup.py` | ST-M24 |
+| F15 学生情報の一括登録 | `unit/controllers/test_import_controller.py`, `test_student_controller.py`, `unit/database/test_database_controller.py` | `test_commands_api.py`, `test_fakes_contract.py` | `test_f15_import_students.py` | ST-M25, M26 |
 | 永続化 | `unit/database/test_database_controller.py`, `unit/several_types/test_student_info.py` | `test_database_api.py` | `test_f2_register.py`, `test_f7_rejoin.py` | ST-M14 |
 | 設定 | `unit/utils/test_config.py` | — | — | 7.2 の起動 |
 | 構造 | — | `test_package_map.py`, `test_fakes_contract.py` | — | — |
