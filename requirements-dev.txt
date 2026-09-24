@@ -1,0 +1,6 @@
+-r requirements.txt
+pdoc>=14
+pytest>=8
+pytest-asyncio>=0.24
+# APIテストで、ローカルに SMTP サーバーを立てて実際にメールを送るため
+aiosmtpd>=1.4
