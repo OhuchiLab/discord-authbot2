@@ -159,6 +159,15 @@ python -m pytest -k 認証コード       # 名前に「認証コード」を含
 python -m pytest -x --lf            # 前回失敗したテストから実行し、最初の失敗で止める (TDD 中に便利)
 ```
 
+### 6.1 GitHub Actions による自動実行
+
+`develop` ブランチへのプルリクエストを作成・更新すると、GitHub Actions ([.github/workflows/test.yml](../.github/workflows/test.yml)) が
+`python -m pytest` (単体・API・機能テスト) を自動で実行する。システムテストは本物の Discord が必要なため実行しない (自動でスキップされる)。
+
+- 1 つでも失敗すると、プルリクエストに ✕ が付く。
+- 失敗したプルリクエストをマージできないようにするには、GitHub のリポジトリ設定 (Settings → Branches → develop のブランチ保護ルール) で、
+  チェック `pytest` を必須 (Require status checks to pass) にする。
+
 ## 7. システムテスト
 
 本物の Discord と SMTP サーバーを使い、リリース前に行う。自動で確認できる部分 (7.3) と、人が操作して確認する部分 (7.4) がある。

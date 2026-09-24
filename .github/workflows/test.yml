@@ -1,0 +1,47 @@
+# =============================================================================
+# develop ブランチへのプルリクエストで、自動テストがすべて通ることを確認する
+#
+#   実行するテスト: 単体・API・機能テスト (python -m pytest)
+#   実行しないテスト: システムテスト (本物の Discord / SMTP が必要なため、自動でスキップされる)
+#
+#   テストが 1 つでも失敗すると、プルリクエストの画面に ✕ が表示されます。
+#   (失敗したらマージできないようにするには、GitHub のブランチ保護ルールで
+#    このチェック「Tests / pytest」を必須にしてください)
+# =============================================================================
+name: Tests
+
+on:
+  pull_request:
+    branches: [develop]
+
+# 同じプルリクエストに続けて push したら、古い実行は取り消して最新だけテストする
+concurrency:
+  group: tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: ソースコードを取得する
+        uses: actions/checkout@v4
+
+      - name: Python 3.12 を用意する
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: ライブラリをインストールする
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: テストを実行する
+        run: python -m pytest -v

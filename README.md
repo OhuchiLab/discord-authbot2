@@ -99,3 +99,5 @@ pip install -r requirements-dev.txt
 python -m pytest              # 単体・API・機能テスト (システムテストは自動でスキップ)
 python -m pytest -m unit      # 階層を指定して実行
 ```
+
+`develop` ブランチへのプルリクエストでは、GitHub Actions ([.github/workflows/test.yml](./.github/workflows/test.yml)) が単体・API・機能テストを自動で実行します。
