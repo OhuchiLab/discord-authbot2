@@ -205,3 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ===== discord-authbot2 =====
+# 学生情報データベース (個人情報を含むため、絶対にコミットしない)
+data/
+# pdoc で自動生成する API ドキュメント
+docs/api/
+# システムテスト用などの .env ファイル (ひな形の .env.example だけはコミットする)
+.env.*
+!.env.example

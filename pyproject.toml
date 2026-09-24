@@ -1,0 +1,21 @@
+[tool.pytest.ini_options]
+# authbot/src/ : 各パッケージは authbot/src/ を基準にインポートし合うため
+# .            : テストから `from tests.fakes import ...` で偽物を使うため
+pythonpath = ["authbot/src", "."]
+testpaths = ["tests"]
+# 別のディレクトリに同じ名前のテストファイルがあっても衝突しないようにする
+addopts = ["--import-mode=importlib"]
+# `async def test_...` をそのまま実行できるようにする
+asyncio_mode = "auto"
+# テストの階層。tests/<階層名>/ 以下のテストに自動で付与される (tests/conftest.py)
+#   例: pytest -m unit / pytest -m "not system"
+markers = [
+    "unit: 単体テスト (tests/unit)",
+    "api: APIテスト - パッケージの公開I/F (tests/api)",
+    "functional: 機能テスト - F1〜F8 の機能 (tests/functional)",
+    "system: システムテスト - 本物の Discord / SMTP (tests/system、RUN_SYSTEM_TESTS=1 のときだけ実行)",
+]
+filterwarnings = [
+    # discord.py が音声機能のために読み込む audioop の非推奨警告 (本 Bot では音声機能を使わない)
+    "ignore:'audioop' is deprecated:DeprecationWarning",
+]
