@@ -4,6 +4,8 @@ database.DatabaseController の偽物
 ファイルを使わず、学生情報をメモリ上だけに保持します。
 """
 
+import msgpack
+
 from several_types import StudentInfo
 
 
@@ -35,6 +37,13 @@ class InMemoryDatabase:
         self._students.append(student)
         self.save()
 
+    def add_many(self, students: list[StudentInfo]) -> None:
+        uuids = [student.uuid for student in students]
+        if len(set(uuids)) != len(uuids) or any(self.find_by_uuid(uuid) is not None for uuid in uuids):
+            raise ValueError("uuid が重複しています")
+        self._students.extend(students)
+        self.save()
+
     def update(self, student: StudentInfo) -> None:
         for index, current in enumerate(self._students):
             if current.uuid == student.uuid:
@@ -42,6 +51,14 @@ class InMemoryDatabase:
                 self.save()
                 return
         raise KeyError(f"uuid {student.uuid} は存在しません")
+
+    def delete(self, uuid: str) -> None:
+        for index, current in enumerate(self._students):
+            if current.uuid == uuid:
+                del self._students[index]
+                self.save()
+                return
+        raise KeyError(f"uuid {uuid} は存在しません")
 
     def completed_fiscal_years(self) -> set[int]:
         return set(self._completed_fiscal_years)
@@ -57,6 +74,15 @@ class InMemoryDatabase:
             self._students[indexes[student.uuid]] = student
         self._completed_fiscal_years.add(fiscal_year)
         self.save()
+
+    def dump(self) -> bytes:
+        return msgpack.packb(
+            {
+                "format_version": 2,
+                "students": [student.to_dict() for student in self._students],
+                "completed_fiscal_years": sorted(self._completed_fiscal_years),
+            }
+        )
 
     def save(self) -> None:
         self.save_count += 1

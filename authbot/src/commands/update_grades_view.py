@@ -20,7 +20,7 @@ import logging
 
 import discord
 
-from controllers import YearUpdateController, YearUpdateError
+from controllers import AuditLogController, YearUpdateController, YearUpdateError
 from controllers.year_update_controller import SELECTABLE_NEXT_GRADES
 from several_types import Grade, YearUpdateCandidate, YearUpdatePlan, YearUpdateResult
 
@@ -37,11 +37,7 @@ def describe_transition(candidate: YearUpdateCandidate) -> str:
     """
     更新内容を「B4 → M1」の形で表す。留年・卒業と、管理者が変更したものには目印を付ける
     """
-    text = f"{candidate.current_grade.value} → {candidate.next_grade.value}"
-    if candidate.next_grade == candidate.current_grade:
-        text += " (留年)"
-    elif candidate.next_grade == Grade.OBOG:
-        text += " (卒業・修了)"
+    text = candidate.transition_text()
     if candidate.is_changed:
         text += " ✏️"
     return text
@@ -77,6 +73,7 @@ class YearUpdateView(discord.ui.View):
     def __init__(
         self,
         controller: YearUpdateController,
+        audit: AuditLogController,
         plan: YearUpdatePlan,
         admin_id: int,
         original_interaction: discord.Interaction,
@@ -86,12 +83,14 @@ class YearUpdateView(discord.ui.View):
 
         Args:
             controller (YearUpdateController): 更新先の変更・確定に使う
+            audit (AuditLogController): 確定した操作をログ用チャンネルに記録するのに使う
             plan (YearUpdatePlan): 表示する更新候補
             admin_id (int): /update_grades を実行した管理者の Discord ユーザー ID (この人だけが操作できる)
             original_interaction (discord.Interaction): /update_grades の実行 (時間切れのときに画面を書き換えるため)
         """
         super().__init__(timeout=TIMEOUT_SECONDS)
         self._controller = controller
+        self._audit = audit
         self._plan = plan
         self._admin_id = admin_id
         self._original_interaction = original_interaction
@@ -152,6 +151,7 @@ class YearUpdateView(discord.ui.View):
         except YearUpdateError as error:
             await interaction.edit_original_response(content=str(error), embed=None, view=None)
             return
+        await self._audit.grades_updated(str(self._admin_id), self._plan, result)
         await interaction.edit_original_response(content=describe_result(result), embed=None, view=None)
 
     async def cancel(self, interaction: discord.Interaction) -> None:

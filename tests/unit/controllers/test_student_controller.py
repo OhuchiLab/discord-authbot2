@@ -6,8 +6,15 @@
 
 import pytest
 
-from controllers import StudentController, StudentEditError, StudentLinkError, StudentRegistrationError
-from several_types import Grade
+from controllers import (
+    StudentController,
+    StudentDeleteError,
+    StudentEditError,
+    StudentLinkError,
+    StudentNotFoundError,
+    StudentRegistrationError,
+)
+from several_types import Grade, NewStudent
 from tests.fakes import InMemoryDatabase
 
 
@@ -187,3 +194,126 @@ def test_変更内容を作った後に重複が生じていたら保存しな�
 
     with pytest.raises(StudentEditError, match="すでに登録されています"):
         controller.apply_edit(edit)
+
+
+# ----------------------------------------------------------------------
+# 一覧 (list_students)
+# ----------------------------------------------------------------------
+
+
+def test_一覧は学年順_同じ学年は学籍番号順(controller):
+    controller.register_student("OB", "AA000001", Grade.OBOG, "ob@shizuoka.ac.jp")
+    controller.register_student("B4-2", "BB000001", Grade.B4, "b42@shizuoka.ac.jp")
+    controller.register_student("M1", "AA000002", Grade.M1, "m1@shizuoka.ac.jp")
+    controller.register_student("B4-1", "AA000003", Grade.B4, "b41@shizuoka.ac.jp")
+
+    assert [s.name for s in controller.list_students()] == ["B4-1", "B4-2", "M1", "OB"]
+
+
+def test_一覧を学年と認証状態で絞り込める(controller):
+    linked = controller.register_student("認証済み", "AA000001", Grade.B4, "a@shizuoka.ac.jp")
+    controller.link_discord_id(linked.uuid, "111")
+    controller.register_student("未認証", "AA000002", Grade.B4, "b@shizuoka.ac.jp")
+    controller.register_student("M1", "AA000003", Grade.M1, "c@shizuoka.ac.jp")
+
+    assert [s.name for s in controller.list_students(grade=Grade.B4)] == ["認証済み", "未認証"]
+    assert [s.name for s in controller.list_students(authenticated=True)] == ["認証済み"]
+    assert [s.name for s in controller.list_students(grade=Grade.B4, authenticated=False)] == ["未認証"]
+
+
+# ----------------------------------------------------------------------
+# 対象の指定 (find_target) と削除 (delete_student)
+# ----------------------------------------------------------------------
+
+
+def test_学籍番号かDiscordIDのどちらか一方で対象を探せる(controller):
+    student = controller.link_discord_id(register_yamada(controller).uuid, "111")
+    assert controller.find_target(student_number="ab123456") == student
+    assert controller.find_target(discord_id="111") == student
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    [
+        ({}, "どちらか一方を指定してください"),
+        ({"student_number": "AB123456", "discord_id": "111"}, "どちらか一方を指定してください"),
+        ({"student_number": "zz999999"}, "学籍番号 ZZ999999 の学生情報が見つかりません。"),
+        ({"discord_id": "999"}, "このメンバーに紐付いた学生情報が見つかりません。"),
+    ],
+)
+def test_対象を正しく指定しないとエラー(controller, target, message):
+    controller.link_discord_id(register_yamada(controller).uuid, "111")
+    with pytest.raises(StudentNotFoundError, match=message):
+        controller.find_target(**target)
+
+
+def test_学生情報を削除できる(controller, database):
+    student = register_yamada(controller)
+    controller.delete_student(student)
+    assert database.get_all() == []
+
+
+def test_確認した後に学生情報が変わっていたら削除しない(controller, database):
+    student = register_yamada(controller)
+    controller.apply_edit(controller.prepare_edit(student, new_name="山田 次郎"))
+
+    with pytest.raises(StudentDeleteError, match="やり直してください"):
+        controller.delete_student(student)
+    assert len(database.get_all()) == 1
+
+
+def test_すでに削除されていたらエラー(controller):
+    student = register_yamada(controller)
+    controller.delete_student(student)
+    with pytest.raises(StudentDeleteError, match="やり直してください"):
+        controller.delete_student(student)
+
+
+# ----------------------------------------------------------------------
+# まとめて登録 (find_registration_problems / register_students)
+# ----------------------------------------------------------------------
+
+
+def new(name: str, student_number: str, email: str, grade: Grade = Grade.B4) -> NewStudent:
+    return NewStudent(name=name, student_number=student_number, grade=grade, email=email)
+
+
+def test_まとめて登録すると1回の保存で全員を登録する(controller, database):
+    save_count = database.save_count
+
+    students = controller.register_students(
+        [new("山田 太郎", "ab123456", "Yamada@shizuoka.ac.jp"), new("鈴木 花子", "CD123456", "suzuki@shizuoka.ac.jp")]
+    )
+
+    assert [(s.student_number, s.email) for s in students] == [
+        ("AB123456", "yamada@shizuoka.ac.jp"),
+        ("CD123456", "suzuki@shizuoka.ac.jp"),
+    ]
+    assert database.get_all() == students
+    assert database.save_count == save_count + 1
+
+
+def test_まとめて登録する前に全員の問題を行ごとに調べられる(controller):
+    register_yamada(controller)
+
+    problems = controller.find_registration_problems(
+        [
+            new("鈴木 花子", "CD123456", "suzuki@shizuoka.ac.jp"),  # 0: 問題なし
+            new("佐藤 次郎", "1234", "sato@shizuoka.ac.jp"),  # 1: 形式
+            new("田中 三郎", "ab123456", "tanaka@shizuoka.ac.jp"),  # 2: 登録済みと重複
+            new("鈴木 次郎", "cd123456", "jiro@shizuoka.ac.jp"),  # 3: 一覧の中で重複 (0 と)
+            new("鈴木 三郎", "EF123456", "SUZUKI@shizuoka.ac.jp"),  # 4: 一覧の中でメールが重複 (0 と)
+        ]
+    )
+
+    assert set(problems) == {1, 2, 3, 4}
+    assert "英数字 8 文字" in problems[1]
+    assert problems[2] == "学籍番号 AB123456 はすでに登録されています。"
+    assert "CD123456" in problems[3] and "重複" in problems[3]
+    assert "suzuki@shizuoka.ac.jp" in problems[4] and "重複" in problems[4]
+
+
+def test_問題があればまとめて登録せず何も保存しない(controller, database):
+    with pytest.raises(StudentRegistrationError):
+        controller.register_students([new("山田 太郎", "AB123456", "a@shizuoka.ac.jp"), new("鈴木", "1234", "b@shizuoka.ac.jp")])
+    assert database.get_all() == []

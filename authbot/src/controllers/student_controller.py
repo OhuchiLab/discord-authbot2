@@ -1,12 +1,12 @@
 """
-学生情報の登録・検索・変更・Discord アカウントとの紐付けを行うコントローラー
+学生情報の登録・検索・変更・削除・Discord アカウントとの紐付けを行うコントローラー
 """
 
 import dataclasses
 import uuid
 
 from database import DatabaseController
-from several_types import Grade, StudentEdit, StudentInfo
+from several_types import Grade, NewStudent, StudentEdit, StudentInfo
 from utils import (
     is_valid_email,
     is_valid_student_number,
@@ -15,6 +15,16 @@ from utils import (
     normalize_name,
     normalize_student_number,
 )
+
+
+def sort_students(students: list[StudentInfo]) -> list[StudentInfo]:
+    """
+    学生情報を、学年順 (`Grade` の定義順)・同じ学年の中は学籍番号順に並べ替える
+
+    /list_students と /export_students で同じ並び順にするために使う
+    """
+    grade_order = {grade: index for index, grade in enumerate(Grade)}
+    return sorted(students, key=lambda s: (grade_order[s.grade], normalize_student_number(s.student_number)))
 
 
 class StudentRegistrationError(Exception):
@@ -28,6 +38,22 @@ class StudentRegistrationError(Exception):
 class StudentEditError(Exception):
     """
     学生情報の変更に失敗したときに送出される例外
+
+    メッセージはそのまま Discord 上で管理者に表示されます。
+    """
+
+
+class StudentDeleteError(Exception):
+    """
+    学生情報の削除に失敗したときに送出される例外
+
+    メッセージはそのまま Discord 上で管理者に表示されます。
+    """
+
+
+class StudentNotFoundError(Exception):
+    """
+    変更・削除の対象の学生情報を特定できなかったときに送出される例外
 
     メッセージはそのまま Discord 上で管理者に表示されます。
     """
@@ -75,24 +101,68 @@ class StudentController:
         Raises:
             StudentRegistrationError: 入力値の形式が不正、または学籍番号・メールアドレスが登録済みの場合
         """
-        problem = self._find_format_problem(name, student_number, email) or self._find_duplicate_problem(
-            student_number, email
-        )
-        if problem:
-            raise StudentRegistrationError(problem)
+        entry = NewStudent(name=name, student_number=student_number, grade=grade, email=email)
+        return self.register_students([entry])[0]
 
-        name = normalize_input(name)
-        student_number = normalize_student_number(student_number)
-        email = normalize_email(email)
-        student = StudentInfo(
-            uuid=str(uuid.uuid4()),
-            name=name,
-            student_number=student_number,
-            email=email,
-            grade=grade,
-        )
-        self._database.add(student)
-        return student
+    def register_students(self, entries: list[NewStudent]) -> list[StudentInfo]:
+        """
+        複数の学生情報をまとめて登録する (1 回の保存で全員を登録する)
+
+        Args:
+            entries (list[NewStudent]): 登録する学生の入力内容
+
+        Returns:
+            list[StudentInfo]: 登録した学生情報 (entries と同じ順)
+
+        Raises:
+            StudentRegistrationError: 1 人でも問題があれば (何も登録しない)。メッセージは最初の問題
+        """
+        problems = self.find_registration_problems(entries)
+        if problems:
+            raise StudentRegistrationError(problems[min(problems)])
+
+        students = [
+            StudentInfo(
+                uuid=str(uuid.uuid4()),
+                name=normalize_input(entry.name),
+                student_number=normalize_student_number(entry.student_number),
+                email=normalize_email(entry.email),
+                grade=entry.grade,
+            )
+            for entry in entries
+        ]
+        self._database.add_many(students)
+        return students
+
+    def find_registration_problems(self, entries: list[NewStudent]) -> dict[int, str]:
+        """
+        まとめて登録する前に、1 人ずつ問題を調べる。登録はしない
+
+        調べること: 値の形式、登録済みの学生との重複、一緒に登録する学生どうしの重複 (後に出てきた方を問題とする)
+
+        Args:
+            entries (list[NewStudent]): 登録する学生の入力内容
+
+        Returns:
+            dict[int, str]: {entries の添字: 問題の説明}。問題が無ければ空の辞書
+        """
+        problems: dict[int, str] = {}
+        seen_student_numbers: set[str] = set()
+        seen_emails: set[str] = set()
+        for index, entry in enumerate(entries):
+            student_number = normalize_student_number(entry.student_number)
+            email = normalize_email(entry.email)
+            problem = self._find_format_problem(entry.name, entry.student_number, entry.email)
+            problem = problem or self._find_duplicate_problem(entry.student_number, entry.email)
+            if problem is None and student_number in seen_student_numbers:
+                problem = f"学籍番号 {student_number} が、一緒に登録する学生の中で重複しています。"
+            if problem is None and email in seen_emails:
+                problem = f"メールアドレス {email} が、一緒に登録する学生の中で重複しています。"
+            if problem is not None:
+                problems[index] = problem
+            seen_student_numbers.add(student_number)
+            seen_emails.add(email)
+        return problems
 
     def find_matching_student(
         self, name: str, student_number: str, grade: Grade, email: str
@@ -121,6 +191,25 @@ class StudentController:
         """
         return self._database.find_by_uuid(student_uuid)
 
+    def list_students(self, grade: Grade | None = None, authenticated: bool | None = None) -> list[StudentInfo]:
+        """
+        学生情報の一覧を返す (学年順、同じ学年の中は学籍番号順)
+
+        Args:
+            grade (Grade | None): 指定すると、その学年の学生だけにする
+            authenticated (bool | None): True なら認証済み (Discord と紐付いている) だけ、False なら未認証だけにする
+
+        Returns:
+            list[StudentInfo]: 条件に合う学生情報
+        """
+        students = [
+            student
+            for student in self._database.get_all()
+            if (grade is None or student.grade == grade)
+            and (authenticated is None or (student.discord_id is not None) == authenticated)
+        ]
+        return sort_students(students)
+
     def find_by_student_number(self, student_number: str) -> StudentInfo | None:
         """
         学籍番号が一致する学生情報を返す (大文字・小文字、全角・半角は区別しない)。見つからなければ None
@@ -129,6 +218,34 @@ class StudentController:
         return next(
             (s for s in self._database.get_all() if normalize_student_number(s.student_number) == target), None
         )
+
+    def find_target(self, student_number: str | None = None, discord_id: str | None = None) -> StudentInfo:
+        """
+        管理者が指定した対象の学生情報を探す (/edit_student・/delete_student で使う)
+
+        学籍番号 (`student_number`) か Discord ユーザー ID (`discord_id`) の、どちらか一方で指定します。
+
+        Returns:
+            StudentInfo: 見つかった学生情報
+
+        Raises:
+            StudentNotFoundError: 指定が 0 個・2 個、または見つからない場合
+        """
+        if (student_number is None) == (discord_id is None):
+            raise StudentNotFoundError(
+                "学籍番号 (student_number) か メンバー (member) のどちらか一方を指定してください。"
+            )
+        if student_number is not None:
+            student = self.find_by_student_number(student_number)
+            if student is None:
+                raise StudentNotFoundError(
+                    f"学籍番号 {normalize_student_number(student_number)} の学生情報が見つかりません。"
+                )
+            return student
+        student = self.find_by_discord_id(discord_id)
+        if student is None:
+            raise StudentNotFoundError("このメンバーに紐付いた学生情報が見つかりません。")
+        return student
 
     def find_by_discord_id(self, discord_id: str) -> StudentInfo | None:
         """
@@ -250,6 +367,24 @@ class StudentController:
             raise StudentEditError(problem)
         self._database.update(edit.after)
         return edit.after
+
+    def delete_student(self, student: StudentInfo) -> None:
+        """
+        学生情報を削除する
+
+        確認した後に、他の管理者などがこの学生情報を変更・削除していた場合は削除しません。
+
+        Args:
+            student (StudentInfo): 削除する学生情報 (管理者が確認画面で見た内容)
+
+        Raises:
+            StudentDeleteError: 学生情報が変更・削除されていた場合 (何も変更しない)
+        """
+        if self._database.find_by_uuid(student.uuid) != student:
+            raise StudentDeleteError(
+                "確認している間に、この学生情報が変更・削除されました。もう一度 /delete_student からやり直してください。"
+            )
+        self._database.delete(student.uuid)
 
     # ------------------------------------------------------------------
     # 内部処理 (登録と変更で共通の確認)

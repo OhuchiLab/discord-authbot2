@@ -62,6 +62,7 @@ def setup_register_command(bot: AuthBot) -> None:
             return
 
         logger.info("User %s registered student %s", user_id, student.uuid)
+        await bot.controllers.audit.student_registered(user_id, student)
         await interaction.followup.send(
             f"{student.name} さんを登録しました。\n"
             f"学籍番号: {student.student_number} / 学年: {student.grade.value} / メール: {student.email}",

@@ -9,7 +9,7 @@ Discord に接続せず、サーバーの状態 (ロール・メンバー・送�
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from external import DiscordPermissionError, GuildNotFoundError, MemberNotFoundError
+from external import ChannelNotFoundError, DiscordPermissionError, GuildNotFoundError, MemberNotFoundError
 from several_types import RoleDefinition
 
 
@@ -39,6 +39,7 @@ class FakeDiscordGateway:
         guild_roles (set[str]): サーバーに存在するロール名
         members (dict[str, FakeMemberState]): サーバーのメンバー (キーは Discord ユーザー ID)
         dms (dict[str, list[str]]): ユーザーごとに送った DM
+        channels (dict[str, list[str]]): サーバーにあるテキストチャンネルと、そこに投稿したメッセージ
         bot_in_guild (bool): Bot がサーバーに参加しているか (False なら GuildNotFoundError)
         can_manage_roles (bool): Bot にロールを管理する権限があるか (False なら DiscordPermissionError)
     """
@@ -47,6 +48,8 @@ class FakeDiscordGateway:
         self.guild_roles: set[str] = set()
         self.members: dict[str, FakeMemberState] = {}
         self.dms: dict[str, list[str]] = defaultdict(list)
+        self.channels: dict[str, list[str]] = {}
+        self.can_post_to_channels = True
         self.bot_in_guild = True
         self.can_manage_roles = True
 
@@ -61,6 +64,12 @@ class FakeDiscordGateway:
         member = FakeMemberState(roles=set(roles), **options)
         self.members[user_id] = member
         return member
+
+    def add_channel(self, name: str) -> None:
+        """
+        サーバーにテキストチャンネルを追加する
+        """
+        self.channels.setdefault(name, [])
 
     def last_dm(self, user_id: str) -> str:
         """
@@ -82,6 +91,14 @@ class FakeDiscordGateway:
         if member is not None and not member.accepts_dm:
             raise DiscordPermissionError(f"ユーザー {user_id} に DM を送れません")
         self.dms[user_id].append(text)
+
+    async def send_channel_message(self, channel_name: str, text: str) -> None:
+        self._check_guild()
+        if channel_name not in self.channels:
+            raise ChannelNotFoundError(f"チャンネル {channel_name} が見つかりません")
+        if not self.can_post_to_channels:
+            raise DiscordPermissionError(f"チャンネル {channel_name} に投稿できません")
+        self.channels[channel_name].append(text)
 
     async def set_nickname(self, user_id: str, nickname: str) -> None:
         member = self._get_member(user_id)

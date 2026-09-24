@@ -16,7 +16,7 @@ import pytest
 
 from bot import AuthBot
 from controllers import build_controllers
-from database import DatabaseController
+from database import DatabaseController, open_database
 from several_types import ADMINISTRATOR_ROLE, AUTHORIZED_ROLE, GRADE_ROLES, Grade, StudentInfo
 from tests.fakes import (
     FakeDiscordGateway,
@@ -45,6 +45,9 @@ class BotDriver:
         mail (FakeMailSender): 送ったメール
         database_path (Path): 学生情報ファイル
         today (date): Bot から見た今日の日付 (年度の計算に使う。テストから変更できる)
+        backup_dir (Path): 学生情報ファイルのバックアップの保存先
+        backup_keep (int): 残すバックアップの数 (テストから変更し、restart_bot() で反映する)
+        log_channel_name (str): 変更履歴を投稿するチャンネル (最初からサーバーにある)
     """
 
     def __init__(self, tmp_path: Path):
@@ -52,6 +55,10 @@ class BotDriver:
         self.discord = FakeDiscordGateway()
         self.mail = FakeMailSender()
         self.today = date(2027, 3, 1)
+        self.backup_dir = tmp_path / "backups"
+        self.backup_keep = 50
+        self.log_channel_name = "authbot-logs"
+        self.discord.add_channel(self.log_channel_name)
         self.bot = self._build_bot()
         self.discord.add_member(ADMIN_ID, roles=(ADMINISTRATOR_ROLE.name,))
 
@@ -68,14 +75,18 @@ class BotDriver:
             smtp_user=None,
             smtp_password=None,
             mail_from="bot@example.com",
+            backup_dir=self.backup_dir,
+            backup_keep=self.backup_keep,
+            log_channel_name=self.log_channel_name,
         )
         bot = AuthBot(config)
         bot.controllers = build_controllers(
-            DatabaseController(config.database_path),
+            open_database(config.database_path, config.backup_dir, config.backup_keep),
             self.mail,
             self.discord,
             config.allowed_email_domain,
             today=lambda: self.today,
+            log_channel_name=config.log_channel_name,
         )
         bot.register_commands()
         return bot
@@ -146,6 +157,10 @@ class BotDriver:
             return student
         self.discord.add_member(discord_id, roles=(AUTHORIZED_ROLE.name, GRADE_ROLES[grade].name))
         return self.bot.controllers.student.link_discord_id(student.uuid, discord_id)
+
+    def logs(self) -> list[str]:
+        """変更履歴のチャンネルに投稿されたメッセージ"""
+        return self.discord.channels[self.log_channel_name]
 
     def saved_grade(self, student: StudentInfo) -> Grade:
         """学生情報ファイルに保存されている学年"""

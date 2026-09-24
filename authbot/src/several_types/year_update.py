@@ -14,7 +14,8 @@ class YearUpdateCandidate:
 
     Attributes:
         student_uuid (str): 学生情報の uuid
-        name (str): 氏名 (確認画面の表示用)
+        name (str): 氏名 (確認画面・ログの表示用)
+        student_number (str): 学籍番号 (ログの表示用)
         discord_id (str | None): Discord ユーザー ID。未認証なら None
         current_grade (Grade): 今の学年
         default_next_grade (Grade): 通常の進級規則による更新先
@@ -23,6 +24,7 @@ class YearUpdateCandidate:
 
     student_uuid: str
     name: str
+    student_number: str
     discord_id: str | None
     current_grade: Grade
     default_next_grade: Grade
@@ -32,6 +34,17 @@ class YearUpdateCandidate:
     def is_changed(self) -> bool:
         """管理者が更新先を通常の進級規則から変更したかどうか"""
         return self.next_grade != self.default_next_grade
+
+    def transition_text(self) -> str:
+        """
+        更新内容を「B4 → M1」の形で表す。留年・卒業には目印を付ける (例: "B4 → B4 (留年)")
+        """
+        text = f"{self.current_grade.value} → {self.next_grade.value}"
+        if self.next_grade == self.current_grade:
+            text += " (留年)"
+        elif self.next_grade == Grade.OBOG:
+            text += " (卒業・修了)"
+        return text
 
 
 @dataclass
