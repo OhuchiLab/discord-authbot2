@@ -1,7 +1,7 @@
 """
 Discord API を操作する窓口 (ゲートウェイ)
 
-Bot から Discord への操作 (DM の送信、ロールの付け外し、ニックネームの変更) は、
+Bot から Discord への操作 (DM の送信、チャンネルへの投稿、ロールの付け外し、ニックネームの変更) は、
 すべてこのクラスを通して行います。
 呼び出し側は Discord のオブジェクトを扱わず、「ユーザー ID (文字列)」と「ロールの定義」だけを渡します。
 そのため `controllers` パッケージは Discord に依存せず、テストでは偽物 (`tests/fakes`) に差し替えられます。
@@ -31,6 +31,12 @@ class GuildNotFoundError(DiscordOperationError):
 class MemberNotFoundError(DiscordOperationError):
     """
     対象のユーザーがサーバーに参加していないときに送出される例外
+    """
+
+
+class ChannelNotFoundError(DiscordOperationError):
+    """
+    指定した名前のテキストチャンネルがサーバーに無いときに送出される例外
     """
 
 
@@ -90,6 +96,30 @@ class DiscordGateway:
             raise MemberNotFoundError(f"ユーザー {user_id} が見つかりません") from error
         except discord.Forbidden as error:
             raise DiscordPermissionError(f"ユーザー {user_id} に DM を送れません") from error
+
+    async def send_channel_message(self, channel_name: str, text: str) -> None:
+        """
+        サーバーのテキストチャンネルに投稿する
+
+        本文に「<@ユーザー ID>」があっても、その人に通知が飛ばないようにして投稿します。
+
+        Args:
+            channel_name (str): 投稿先のチャンネル名 (例: "authbot-logs")
+            text (str): 投稿する文章 (2000 文字まで)
+
+        Raises:
+            GuildNotFoundError: Bot がサーバーに参加していない場合
+            ChannelNotFoundError: その名前のテキストチャンネルが無い場合
+            DiscordPermissionError: Bot にチャンネルの閲覧・投稿の権限が無い場合
+        """
+        guild = self._get_guild()
+        channel = discord.utils.get(guild.text_channels, name=channel_name)
+        if channel is None:
+            raise ChannelNotFoundError(f"チャンネル {channel_name} が見つかりません")
+        try:
+            await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+        except discord.Forbidden as error:
+            raise DiscordPermissionError(f"チャンネル {channel_name} に投稿できません") from error
 
     async def set_nickname(self, user_id: str, nickname: str) -> None:
         """

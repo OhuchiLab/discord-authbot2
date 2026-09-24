@@ -17,22 +17,13 @@ import logging
 
 import discord
 
-from controllers import StudentEditController, StudentEditError
-from several_types import FIELD_LABELS, StudentEdit, StudentEditResult, StudentInfo
+from controllers import AuditLogController, StudentEditController, StudentEditError
+from several_types import StudentEdit, StudentEditResult
 
 logger = logging.getLogger(__name__)
 
 TIMEOUT_SECONDS = 14 * 60
 """操作されないまま、この秒数が経つとキャンセル扱いにする (Discord の応答の有効期限 15 分より短くする)"""
-
-
-def describe_value(student: StudentInfo, field: str) -> str:
-    """学生情報の 1 項目を、画面に表示する文字列にする"""
-    if field == "grade":
-        return student.grade.value
-    if field == "discord_id":
-        return f"<@{student.discord_id}>" if student.discord_id else "なし (未認証)"
-    return str(getattr(student, field))
 
 
 def describe_result(result: StudentEditResult) -> str:
@@ -58,6 +49,7 @@ class StudentEditView(discord.ui.View):
     def __init__(
         self,
         controller: StudentEditController,
+        audit: AuditLogController,
         edit: StudentEdit,
         admin_id: int,
         original_interaction: discord.Interaction,
@@ -67,24 +59,23 @@ class StudentEditView(discord.ui.View):
 
         Args:
             controller (StudentEditController): 変更の確定に使う
+            audit (AuditLogController): 確定した操作をログ用チャンネルに記録するのに使う
             edit (StudentEdit): 表示する変更内容
             admin_id (int): /edit_student を実行した管理者の Discord ユーザー ID (この人だけが操作できる)
             original_interaction (discord.Interaction): /edit_student の実行 (時間切れのときに画面を書き換えるため)
         """
         super().__init__(timeout=TIMEOUT_SECONDS)
         self._controller = controller
+        self._audit = audit
         self._edit = edit
         self._admin_id = admin_id
         self._original_interaction = original_interaction
 
     def render(self) -> discord.Embed:
         """変更前後を一覧にした埋め込み表示を作る"""
-        lines = [
-            f"{label}: {describe_value(self._edit.before, field)} → {describe_value(self._edit.after, field)}"
-            for field, label in FIELD_LABELS.items()
-            if getattr(self._edit.before, field) != getattr(self._edit.after, field)
-        ]
-        embed = discord.Embed(title=f"学生情報の変更: {self._edit.before.name}", description="\n".join(lines))
+        embed = discord.Embed(
+            title=f"学生情報の変更: {self._edit.before.name}", description="\n".join(self._edit.describe_changes())
+        )
         if self._edit.unlinks_discord:
             embed.add_field(
                 name="紐付けの解除について",
@@ -115,6 +106,7 @@ class StudentEditView(discord.ui.View):
         except StudentEditError as error:
             await interaction.edit_original_response(content=str(error), embed=None, view=None)
             return
+        await self._audit.student_edited(str(self._admin_id), self._edit, result)
         await interaction.edit_original_response(content=describe_result(result), embed=None, view=None)
 
     async def cancel(self, interaction: discord.Interaction) -> None:

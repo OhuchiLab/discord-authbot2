@@ -52,5 +52,5 @@ def setup_update_grades_command(bot: AuthBot) -> None:
             await interaction.followup.send(str(error), ephemeral=True)
             return
 
-        view = YearUpdateView(bot.controllers.year_update, plan, interaction.user.id, interaction)
+        view = YearUpdateView(bot.controllers.year_update, bot.controllers.audit, plan, interaction.user.id, interaction)
         await interaction.followup.send(embed=view.render(), view=view, ephemeral=True)

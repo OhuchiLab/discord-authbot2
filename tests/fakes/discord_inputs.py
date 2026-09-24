@@ -37,6 +37,21 @@ class FakeDiscordMessage:
 
 
 @dataclass
+class FakeAttachment:
+    """スラッシュコマンドに添付されたファイル"""
+
+    filename: str
+    data: bytes
+
+    @property
+    def size(self) -> int:
+        return len(self.data)
+
+    async def read(self) -> bytes:
+        return self.data
+
+
+@dataclass
 class SentResponse:
     """
     インタラクションへの応答 1 件分の記録
@@ -46,12 +61,19 @@ class SentResponse:
         ephemeral (bool): 実行者だけに見えるか
         embed (discord.Embed | None): 埋め込み表示 (年度更新の一覧など)
         view (discord.ui.View | None): ボタンやセレクトメニュー
+        file (discord.File | None): 添付ファイル
     """
 
     text: str | None
     ephemeral: bool
     embed: object | None = None
     view: object | None = None
+    file: object | None = None
+
+    def file_bytes(self) -> bytes:
+        """添付ファイルの中身"""
+        self.file.fp.seek(0)
+        return self.file.fp.read()
 
 
 class FakeInteractionResponse:
@@ -79,8 +101,8 @@ class FakeFollowup:
     def __init__(self, sent: list[SentResponse]):
         self._sent = sent
 
-    async def send(self, text: str | None = None, ephemeral: bool = False, embed=None, view=None) -> None:
-        self._sent.append(SentResponse(text, ephemeral, embed, view))
+    async def send(self, text: str | None = None, ephemeral: bool = False, embed=None, view=None, file=None) -> None:
+        self._sent.append(SentResponse(text, ephemeral, embed, view, file))
 
 
 class FakeInteraction:

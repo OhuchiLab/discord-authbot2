@@ -5,7 +5,7 @@
 
     1. 設定 (BotConfig)
     2. Bot 本体 (AuthBot)
-    3. 外部とのやり取り: データベース (DatabaseController) / メール送信 (MailSender) / Discord 操作 (DiscordGateway ← Bot を使う)
+    3. 外部とのやり取り: データベース (DatabaseController、バックアップ付き) / メール送信 (MailSender) / Discord 操作 (DiscordGateway ← Bot を使う)
     4. コントローラー一式 (build_controllers) → Bot に設定
     5. Bot を起動
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bot import AuthBot
 from controllers import build_controllers
-from database import DatabaseController
+from database import open_database
 from external import DiscordGateway, MailSender
 from utils import ConfigError, load_config
 
@@ -40,7 +40,7 @@ def main() -> None:
 
     bot = AuthBot(config)
 
-    database = DatabaseController(config.database_path)
+    database = open_database(config.database_path, config.backup_dir, config.backup_keep)
     logger.info("Loaded %d students from %s", len(database.get_all()), config.database_path)
     mail_sender = MailSender(
         host=config.smtp_host,
@@ -52,7 +52,13 @@ def main() -> None:
     )
     discord_gateway = DiscordGateway(bot, config.guild_id)
 
-    bot.controllers = build_controllers(database, mail_sender, discord_gateway, config.allowed_email_domain)
+    bot.controllers = build_controllers(
+        database,
+        mail_sender,
+        discord_gateway,
+        config.allowed_email_domain,
+        log_channel_name=config.log_channel_name,
+    )
 
     # ログの設定は上の basicConfig で済ませているため、discord.py 側の設定は行わない (log_handler=None)
     bot.run(config.discord_token, log_handler=None)

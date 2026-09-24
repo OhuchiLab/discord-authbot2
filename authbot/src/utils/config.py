@@ -33,6 +33,9 @@ class BotConfig:
         smtp_user (str | None): SMTP サーバーのログインユーザー名。None ならログインしない
         smtp_password (str | None): SMTP サーバーのログインパスワード
         mail_from (str): 認証メールの差出人アドレス
+        backup_dir (Path | None): 学生情報ファイルのバックアップの保存先。None ならバックアップを取らない
+        backup_keep (int): 残すバックアップの数。0 ならバックアップを取らない
+        log_channel_name (str | None): 変更履歴を投稿するチャンネル名。None なら投稿しない
     """
 
     discord_token: str
@@ -45,6 +48,9 @@ class BotConfig:
     smtp_user: str | None
     smtp_password: str | None
     mail_from: str
+    backup_dir: Path | None = None
+    backup_keep: int = 50
+    log_channel_name: str | None = None
 
 
 def load_config(env_file: Path = Path(".env")) -> BotConfig:
@@ -65,6 +71,9 @@ def load_config(env_file: Path = Path(".env")) -> BotConfig:
     | SMTP_USER | | (ログインしない) |
     | SMTP_PASSWORD | | |
     | MAIL_FROM | SMTP_USER が無ければ ○ | SMTP_USER と同じ |
+    | BACKUP_DIR | | data/backups |
+    | BACKUP_KEEP | | 50 (0 ならバックアップを取らない) |
+    | LOG_CHANNEL_NAME | | authbot-logs (空にすると投稿しない) |
 
     Args:
         env_file (Path): 読み込む .env ファイル (無ければ環境変数だけを使う)
@@ -95,7 +104,20 @@ def load_config(env_file: Path = Path(".env")) -> BotConfig:
         smtp_user=os.getenv("SMTP_USER") or None,
         smtp_password=os.getenv("SMTP_PASSWORD") or None,
         mail_from=os.getenv("MAIL_FROM") or os.environ["SMTP_USER"],
+        backup_dir=Path(os.getenv("BACKUP_DIR") or "data/backups"),
+        backup_keep=_read_non_negative_int("BACKUP_KEEP", os.getenv("BACKUP_KEEP") or "50"),
+        log_channel_name=_read_log_channel_name(),
     )
+
+
+def _read_log_channel_name() -> str | None:
+    """
+    LOG_CHANNEL_NAME を読む。未設定なら "authbot-logs"、空 (LOG_CHANNEL_NAME=) なら None (投稿しない)
+    """
+    value = os.getenv("LOG_CHANNEL_NAME")
+    if value is None:
+        return "authbot-logs"
+    return value.strip() or None
 
 
 def _read_int(name: str, value: str) -> int:
@@ -109,6 +131,19 @@ def _read_int(name: str, value: str) -> int:
         return int(value)
     except ValueError as error:
         raise ConfigError(f"環境変数 {name} は整数である必要があります: {value!r}") from error
+
+
+def _read_non_negative_int(name: str, value: str) -> int:
+    """
+    環境変数の値を 0 以上の整数に変換する
+
+    Raises:
+        ConfigError: 0 以上の整数に変換できない場合
+    """
+    number = _read_int(name, value)
+    if number < 0:
+        raise ConfigError(f"環境変数 {name} は 0 以上である必要があります: {value!r}")
+    return number
 
 
 def _read_bool(name: str, value: str) -> bool:

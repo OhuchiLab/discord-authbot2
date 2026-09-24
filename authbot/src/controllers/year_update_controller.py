@@ -102,6 +102,7 @@ class YearUpdateController:
             YearUpdateCandidate(
                 student_uuid=student.uuid,
                 name=student.name,
+                student_number=student.student_number,
                 discord_id=student.discord_id,
                 current_grade=student.grade,
                 default_next_grade=DEFAULT_NEXT_GRADES[student.grade],

@@ -12,10 +12,14 @@ from datetime import date
 from database import DatabaseController
 from external import DiscordGateway, MailSender
 
+from .audit_log_controller import AuditLogController
 from .auth_flow_controller import AuthFlowController
+from .export_controller import ExportController
+from .import_controller import ImportController
 from .onboarding_controller import OnboardingController
 from .role_controller import RoleController
 from .student_controller import StudentController
+from .student_delete_controller import StudentDeleteController
 from .student_edit_controller import StudentEditController
 from .year_update_controller import YearUpdateController
 
@@ -32,6 +36,10 @@ class BotControllers:
         onboarding (OnboardingController): 参加から認証完了までの一連の流れ
         year_update (YearUpdateController): 現役メンバーの年度更新
         student_edit (StudentEditController): 学生情報の手動変更
+        student_delete (StudentDeleteController): 学生情報の削除
+        export (ExportController): 学生情報の書き出し
+        student_import (ImportController): CSV からの一括登録
+        audit (AuditLogController): 変更履歴のログ用チャンネルへの投稿
     """
 
     student: StudentController
@@ -40,6 +48,10 @@ class BotControllers:
     onboarding: OnboardingController
     year_update: YearUpdateController
     student_edit: StudentEditController
+    student_delete: StudentDeleteController
+    export: ExportController
+    student_import: ImportController
+    audit: AuditLogController
 
 
 def build_controllers(
@@ -48,6 +60,7 @@ def build_controllers(
     discord_gateway: DiscordGateway,
     allowed_email_domain: str,
     today: Callable[[], date] = date.today,
+    log_channel_name: str | None = None,
 ) -> BotControllers:
     """
     コントローラー一式を組み立てる
@@ -58,6 +71,7 @@ def build_controllers(
         discord_gateway (DiscordGateway): Discord の操作
         allowed_email_domain (str): 受け付けるメールアドレスのドメイン
         today (Callable[[], date]): 今日の日付を返す関数 (年度の計算に使う。テストで差し替えるため)
+        log_channel_name (str | None): 変更履歴を投稿するチャンネル名。None なら投稿しない
 
     Returns:
         BotControllers: 組み立てたコントローラー一式
@@ -65,9 +79,13 @@ def build_controllers(
     student = StudentController(database, allowed_email_domain)
     auth_flow = AuthFlowController(student, mail_sender, allowed_email_domain)
     role = RoleController(discord_gateway)
-    onboarding = OnboardingController(student, auth_flow, role, discord_gateway)
+    audit = AuditLogController(discord_gateway, log_channel_name)
+    onboarding = OnboardingController(student, auth_flow, role, discord_gateway, audit)
     year_update = YearUpdateController(database, role, today)
     student_edit = StudentEditController(student, role)
+    student_delete = StudentDeleteController(student, role)
+    export = ExportController(database, today)
+    student_import = ImportController(student)
     return BotControllers(
         student=student,
         auth_flow=auth_flow,
@@ -75,4 +93,8 @@ def build_controllers(
         onboarding=onboarding,
         year_update=year_update,
         student_edit=student_edit,
+        student_delete=student_delete,
+        export=export,
+        student_import=student_import,
+        audit=audit,
     )

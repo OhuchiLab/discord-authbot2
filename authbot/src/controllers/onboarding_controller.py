@@ -9,6 +9,7 @@ import logging
 
 from external import DiscordGateway, DiscordPermissionError, MemberNotFoundError
 
+from .audit_log_controller import AuditLogController
 from .auth_flow_controller import AuthFlowController
 from .role_controller import RoleController
 from .student_controller import StudentController
@@ -27,6 +28,7 @@ class OnboardingController:
         auth_flow: AuthFlowController,
         role_controller: RoleController,
         discord_gateway: DiscordGateway,
+        audit: AuditLogController,
     ):
         """
         コンストラクタ
@@ -36,11 +38,13 @@ class OnboardingController:
             auth_flow (AuthFlowController): DM での認証手続きに使う
             role_controller (RoleController): ロールの付け外しに使う
             discord_gateway (DiscordGateway): DM の送信に使う
+            audit (AuditLogController): 認証完了の記録に使う
         """
         self._students = student_controller
         self._auth_flow = auth_flow
         self._roles = role_controller
         self._discord = discord_gateway
+        self._audit = audit
 
     async def welcome_new_member(self, user_id: str, display_name: str) -> None:
         """
@@ -79,6 +83,7 @@ class OnboardingController:
         student = reply.authenticated_student
         if student is None:
             return
+        await self._audit.member_authenticated(student)
 
         try:
             problems = await self._roles.mark_as_authorized(user_id, student)

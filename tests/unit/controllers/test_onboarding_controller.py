@@ -7,7 +7,7 @@ Discord・メール送信・データベースは偽物に置き換えていま�
 
 import pytest
 
-from controllers import AuthFlowController, OnboardingController, RoleController, StudentController
+from controllers import AuditLogController, AuthFlowController, OnboardingController, RoleController, StudentController
 from several_types import AUTHORIZED_ROLE, GRADE_ROLES, UNAUTHORIZED_ROLE, Grade
 from tests.fakes import FakeDiscordGateway, FakeMailSender, InMemoryDatabase
 
@@ -30,7 +30,8 @@ def students() -> StudentController:
 @pytest.fixture
 def onboarding(students, discord) -> OnboardingController:
     auth_flow = AuthFlowController(students, FakeMailSender(), "shizuoka.ac.jp", code_generator=lambda: CODE)
-    return OnboardingController(students, auth_flow, RoleController(discord), discord)
+    audit = AuditLogController(discord, None)  # ログは投稿しない
+    return OnboardingController(students, auth_flow, RoleController(discord), discord, audit)
 
 
 def link_yamada(students: StudentController) -> None:
