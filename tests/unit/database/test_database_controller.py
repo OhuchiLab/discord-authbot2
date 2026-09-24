@@ -74,3 +74,19 @@ def test_年度更新に存在しない学生が含まれていたらエラー�
     with pytest.raises(KeyError):
         database.commit_year_update([make_student("no-such-uuid")], 2027)
     assert database.completed_fiscal_years() == set()
+
+
+def test_削除した学生情報は再起動後も残らない(tmp_path):
+    filepath = tmp_path / "students.msgpack"
+    database = DatabaseController(filepath)
+    database.add(make_student("uuid-1"))
+    database.add(make_student("uuid-2"))
+
+    database.delete("uuid-1")
+
+    assert [s.uuid for s in DatabaseController(filepath).get_all()] == ["uuid-2"]
+
+
+def test_存在しないuuidは削除できない(tmp_path):
+    with pytest.raises(KeyError):
+        DatabaseController(tmp_path / "students.msgpack").delete("no-such-uuid")

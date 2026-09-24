@@ -43,6 +43,14 @@ class InMemoryDatabase:
                 return
         raise KeyError(f"uuid {student.uuid} は存在しません")
 
+    def delete(self, uuid: str) -> None:
+        for index, current in enumerate(self._students):
+            if current.uuid == uuid:
+                del self._students[index]
+                self.save()
+                return
+        raise KeyError(f"uuid {uuid} は存在しません")
+
     def completed_fiscal_years(self) -> set[int]:
         return set(self._completed_fiscal_years)
 

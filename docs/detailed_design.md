@@ -26,6 +26,8 @@ discord-authbot2/
 │       │   ├── grade_option.py        # 学年オプションの選択肢 (表示名付き)
 │       │   ├── list_students.py       # /list_students
 │       │   ├── list_students_view.py  # /list_students の一覧表示 (ページ切り替えのボタン)
+│       │   ├── delete_student.py      # /delete_student
+│       │   ├── delete_student_view.py # /delete_student の確認画面 (削除・キャンセルのボタン)
 │       │   ├── edit_student.py        # /edit_student
 │       │   ├── edit_student_view.py   # /edit_student の確認画面 (確定・キャンセルのボタン)
 │       │   ├── update_grades.py       # /update_grades
@@ -40,6 +42,7 @@ discord-authbot2/
 │       │   ├── auth_flow_controller.py
 │       │   ├── student_controller.py
 │       │   ├── student_edit_controller.py
+│       │   ├── student_delete_controller.py
 │       │   ├── role_controller.py
 │       │   └── year_update_controller.py
 │       ├── database/          # 学生情報の保存
@@ -117,7 +120,7 @@ classDiagram
     }
     class BotControllers {
         <<frozen dataclass>>
-        student, auth_flow, role, onboarding, year_update, student_edit
+        student, auth_flow, role, onboarding, year_update, student_edit, student_delete
     }
     class OnboardingController {
         +welcome_new_member(user_id, display_name)
@@ -139,6 +142,13 @@ classDiagram
         +find_by_student_number(student_number) StudentInfo
         +prepare_edit(student, new_...) StudentEdit
         +apply_edit(edit) StudentInfo
+        +find_target(student_number, discord_id) StudentInfo
+        +list_students(grade, authenticated) list~StudentInfo~
+        +delete_student(student)
+    }
+    class StudentDeleteController {
+        +prepare(student_number, discord_id) StudentInfo
+        +commit(student) StudentDeleteResult
     }
     class StudentEditController {
         +prepare(student_number, discord_id, new_...) StudentEdit
@@ -164,6 +174,7 @@ classDiagram
         +find_by_discord_id(discord_id) StudentInfo
         +add(student)
         +update(student)
+        +delete(uuid)
         +completed_fiscal_years() set~int~
         +commit_year_update(students, fiscal_year)
         +save()
@@ -187,6 +198,9 @@ classDiagram
     BotControllers --> RoleController
     BotControllers --> YearUpdateController
     BotControllers --> StudentEditController
+    BotControllers --> StudentDeleteController
+    StudentDeleteController --> StudentController
+    StudentDeleteController --> RoleController
     StudentEditController --> StudentController
     StudentEditController --> RoleController
     YearUpdateController --> DatabaseController
@@ -245,6 +259,7 @@ classDiagram
 | `/health_check` | `health_check.py` | なし | "I'm alive!" と返す |
 | `/register` | `register.py` | `name`, `student_number`, `grade` (選択式), `email` | `defer` → `RoleController.is_admin()` → `StudentController.register_student()` → 結果を返す |
 | `/auth` | `auth.py` | なし | `defer` → `OnboardingController.request_auth()` の戻り値を返す |
+| `/delete_student` | `delete_student.py` | 対象: `student_number` または `member` (どちらか一方) | `defer` → `RoleController.is_admin()` → `StudentDeleteController.prepare()` → 確認画面 (`StudentDeleteView`) を表示 |
 | `/edit_student` | `edit_student.py` | 対象: `student_number` または `member` (どちらか一方)<br/>変更: `new_name`, `new_student_number`, `new_grade` (選択式), `new_email`, `unlink_discord` (真偽値) | `defer` → `RoleController.is_admin()` → `StudentEditController.prepare()` → 確認画面 (`StudentEditView`) を表示 |
 | `/list_students` | `list_students.py` | `grade` (選択式、省略可), `status` (認証済み / 未認証、省略可) | `defer` → `RoleController.is_admin()` → `StudentController.list_students()` → 一覧 (`StudentListView`) を表示。該当者がいなければ「条件に合う学生はいません。」 |
 | `/update_grades` | `update_grades.py` | `fiscal_year` (年度。整数 2000〜2100、省略可) | `defer` → `RoleController.is_admin()` → `YearUpdateController.create_plan()` → 確認画面 (`YearUpdateView`) を表示 |
@@ -262,6 +277,11 @@ classDiagram
 - 1 ページ 20 人 (`PAGE_SIZE`)。1 ページに収まる場合はボタンを付けない。
 - `show_page(interaction, page)`: ◀ 前へ / 次へ ▶ ボタンから呼ばれ、ページを切り替える。
 - `interaction_check(interaction)`: `/list_students` を実行した管理者以外の操作は受け付けない。
+
+#### `delete_student_view.py` — `StudentDeleteView(discord.ui.View)`
+
+`/delete_student` の確認画面。削除する学生情報のすべての項目と、「この操作は取り消せません」という注意を表示する。
+認証済みの人なら、Discord 上で未認証に戻ることも表示する。操作 (`confirm` = 削除する / `cancel` / `on_timeout` / `interaction_check`) は `StudentEditView` と同じ。
 
 #### `edit_student_view.py` — `StudentEditView(discord.ui.View)`
 
@@ -403,6 +423,8 @@ stateDiagram-v2
 | `find_by_uuid` / `find_by_discord_id` | `DatabaseController` の同名メソッドを呼ぶ | — |
 | `list_students(grade=None, authenticated=None)` | 学生情報の一覧を、学年順 (`Grade` の定義順)・同じ学年の中は学籍番号順で返す。学年と認証の状態 (Discord と紐付いているか) で絞り込める | — |
 | `find_by_student_number` | 学籍番号が一致する学生情報を返す (正規化して比較) | — |
+| `find_target(student_number=None, discord_id=None)` | 管理者が指定した対象を、学籍番号か Discord ID のどちらか一方で探す (`/edit_student`・`/delete_student` で共通) | `StudentNotFoundError` (指定が 0 個・2 個 / 見つからない) |
+| `delete_student(student)` | 保存されている学生情報が `student` と同じか (確認中に変更・削除されていないか) を確認して `DatabaseController.delete()` | `StudentDeleteError` |
 | `prepare_edit(student, new_name, new_student_number, new_grade, new_email, unlink_discord)` | None の項目は変えずに変更後の `StudentInfo` を作り、`StudentEdit` (変更前・変更後) を返す。形式・重複 (自分自身を除く) を `register_student` と同じ規則で確認する。**保存はしない** | `StudentEditError` (変更なし / 形式不正 / 重複 / 紐付いていないのに解除) |
 | `apply_edit(edit)` | 保存されている学生情報が `edit.before` と同じか (確認中に変更されていないか) と、重複を再確認して `DatabaseController.update()` | `StudentEditError` |
 | `link_discord_id` | 1. 学生情報が存在すること<br/>2. その学生情報が別の Discord ID に紐付いていないこと<br/>3. その Discord ID が別の学生情報に紐付いていないこと<br/>を確認し、`discord_id` を設定して `DatabaseController.update()` | `StudentLinkError` |
@@ -434,6 +456,18 @@ stateDiagram-v2
 戻り値 `StudentEditResult` には、変更後の学生情報、Discord に反映したか、サーバーにいなかったか、うまくいかなかった説明が入る。
 Discord への反映に失敗しても学生情報の変更は取り消さない。
 
+#### `student_delete_controller.py` — `StudentDeleteController`
+
+学生情報の削除 (F12) の流れを担当する。
+
+| メソッド | 処理 | 例外 (`StudentDeleteError`) |
+| --- | --- | --- |
+| `prepare(student_number=None, discord_id=None)` | `StudentController.find_target()` で対象を探す | 対象の指定が 0 個・2 個 / 見つからない |
+| `commit(student)` | `StudentController.delete_student()` で削除し、認証済みなら `RoleController.revoke_authorization()` で未認証の状態に戻す | 確認中に変更・削除された (何も変更しない) |
+
+戻り値 `StudentDeleteResult` には、削除した学生情報、Discord を変更したか、サーバーにいなかったか、うまくいかなかった説明が入る。
+Discord の変更に失敗しても学生情報の削除は取り消さない。
+
 #### `year_update_controller.py` — `YearUpdateController`
 
 現役メンバーの年度更新 (F9) を担当する。学生情報が正で、Discord のロールはその結果を反映する (一方向)。
@@ -463,6 +497,7 @@ Discord への反映に失敗しても学生情報の変更は取り消さない
 - 生成時にファイルを読み込み、全件を `list[StudentInfo]` としてメモリに持つ。ファイルが無ければ空。
 - 追加・更新のたびに `save()` でファイル全体を書き直す。
 - 入力チェックや重複判定は行わない (`StudentController` の責務)。ただし uuid の重複追加と、存在しない uuid の更新は例外にする。
+- `delete(uuid)` は学生情報を削除して保存する。存在しない uuid は `KeyError`。
 - 現役更新を実行済みの年度 (`completed_fiscal_years()`) も同じファイルに保存する。
 - `commit_year_update(students, fiscal_year)` は、学生情報の置き換えと年度の記録を **1 回の保存でまとめて** 行う。
   年度が実行済み (`ValueError`) や存在しない uuid (`KeyError`) の場合は何も変更しない。
@@ -558,7 +593,7 @@ discord.py の例外は、次の例外に変換して送出する (すべて `Di
 | `student_info.py` | `StudentInfo` (frozen dataclass) | 学生情報 1 件。変更は `dataclasses.replace()` で新しいインスタンスを作る |
 | `auth_session.py` | `AuthStep` (Enum), `AuthSession` (dataclass) | 認証手続きの段階と途中経過 |
 | `role_definition.py` | `RoleDefinition` と各ロール定数 | ロール名・色の一覧。**ロールの変更はこのファイルだけで行う** |
-| `student_edit.py` | `StudentEdit`, `StudentEditResult` (frozen dataclass), `FIELD_LABELS` | 手動変更の内容 (変更前・変更後) と結果。`changed_fields()` は変わる項目の表示名、`unlinks_discord` は紐付けを解除する変更か |
+| `student_edit.py` | `StudentEdit`, `StudentEditResult`, `StudentDeleteResult` (frozen dataclass), `FIELD_LABELS` | 手動変更の内容 (変更前・変更後) と結果、削除の結果。`changed_fields()` は変わる項目の表示名、`unlinks_discord` は紐付けを解除する変更か |
 | `year_update.py` | `YearUpdateCandidate`, `YearUpdatePlan` (dataclass), `YearUpdateResult` (frozen dataclass) | 現役更新の候補 (1 人分)・計画 (一覧)・確定結果。`is_changed` は既定の更新先から変更されたか |
 
 ### 3.8 `utils` パッケージ

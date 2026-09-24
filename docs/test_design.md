@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 単体 | `tests/unit/<パッケージ>/` | 1 つのモジュール (クラス・関数) の細かい振る舞いと境界値 | 対象のモジュール、値オブジェクト (`several_types`, `utils`)、副作用の無いコントローラー | ファイル (`InMemoryDatabase`)、Discord、SMTP、時計 | 常に |
 | API | `tests/api/` | 1 つのパッケージが `__init__.py` で公開している I/F の約束事 (契約) | パッケージの内部と、その下の層 (`database` は一時フォルダの実ファイル、`MailSender` はローカルの SMTP サーバー) | Discord (本物が無いため) | 常に |
-| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F11 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
+| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F12 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
 | システム | `tests/system/` + 本書 7 章の手順書 | 本物の環境で Bot 全体が動くこと | すべて (テスト用 Discord サーバー、テスト用 SMTP) | なし | リリース前に手動で |
 
 ### 2.1 各階層で確認すること / しないこと
@@ -127,22 +127,25 @@ flowchart TD
     G --> H[7. 詳細設計書を更新<br/>リリース前にシステムテスト]
 ```
 
-### 5.1 例: 「管理者が学生情報を削除する /unregister コマンド」を追加する場合
+### 5.1 例: 「未認証の人に DM で認証を催促する /remind_unauthenticated コマンド」を追加する場合
 
-1. **基本設計書** の機能一覧に `F(次の番号) 学生情報の削除 (管理者)` を追加する。
-2. **機能テスト** `tests/functional/test_f<番号>_unregister.py` を書く。
+1. **基本設計書** の機能一覧に `F(次の番号) 未認証メンバーへの催促 (管理者)` を追加する。
+2. **機能テスト** `tests/functional/test_f<番号>_remind_unauthenticated.py` を書く。
    ```python
-   async def test_管理者は学生情報を削除できる(driver):
-       await driver.register_yamada()
-       reply = await driver.run_command(ADMIN_ID, "unregister", student_number="AB123456")
-       assert "削除しました" in reply
-       assert DatabaseController(driver.database_path).get_all() == []
+   async def test_未認証のメンバーにだけDMが届く(driver):
+       await driver.member_joins("201")                                  # 未認証のまま
+       driver.add_student("山田 太郎", "AB123456", Grade.B4, discord_id="101")  # 認証済み
+       reply = await driver.run_command(ADMIN_ID, "remind_unauthenticated")
+       assert "1 人に送信しました" in reply
+       assert "認証" in driver.discord.last_dm("201")
+       assert driver.discord.dms["101"] == []
    ```
-   → `/unregister が登録されていません` で失敗する 🔴
-3. **APIテスト**: `database` に `delete(uuid)` を追加すると決め、`tests/api/test_database_api.py` に「削除した結果がファイルに保存される」テストを書く → 失敗 🔴
-4. **単体テスト**: `tests/unit/controllers/test_student_controller.py` に `unregister_student()` のテスト (存在しない学籍番号ならエラー 等) を書く → 失敗 🔴
-   `InMemoryDatabase` にも `delete()` を追加する (`test_fakes_contract.py` が追加漏れを教えてくれる)。
-5. `DatabaseController.delete()` → `StudentController.unregister_student()` → `commands/unregister.py` の順に実装し、テストを通す 🟢
+   → `/remind_unauthenticated が登録されていません` で失敗する 🔴
+3. **APIテスト**: 「Unauthorized ロールを持つメンバーの一覧」を Discord から取る必要があるので、`external.DiscordGateway` に
+   `list_members_with_role(definition)` を追加すると決める。`FakeDiscordGateway` にも同じメソッドを追加する
+   (`tests/api/test_fakes_contract.py` が追加漏れを教えてくれる) → 失敗 🔴
+4. **単体テスト**: `tests/unit/controllers/` に催促の処理 (DM を拒否している人は飛ばして数える 等) のテストを書く → 失敗 🔴
+5. `DiscordGateway` → コントローラー → `commands/remind_unauthenticated.py` の順に実装し、テストを通す 🟢
 6. 全テストが通る状態のまま、重複などを整理する 🔵
 7. 詳細設計書を更新する。
 
@@ -216,7 +219,7 @@ python -m pytest tests/system -v
 | --- | --- | --- |
 | ST-A01 | Bot がテスト用サーバーに参加している | 自動 |
 | ST-A02 | Bot が使うロールがすべてサーバーにある (無ければ作成される) | 自動 |
-| ST-A03 | スラッシュコマンド 6 つがサーバーに登録されている | 自動 |
+| ST-A03 | スラッシュコマンド 7 つがサーバーに登録されている | 自動 |
 | ST-A04 | テスト担当者に DM を送れる | 自動 + 担当者の Discord に DM が届いたことを目視 |
 | ST-A05 | 認証メールを送れる | 自動 + Mailpit にメールが届いたことを目視 |
 
@@ -247,6 +250,7 @@ python -m pytest tests/system -v
 | ST-M19 | F10 | 管理者役で `/edit_student member:@新メンバー役 new_name:(別の氏名)` → [確定する] | 「〇〇 さんの学生情報を変更しました。」。新メンバー役のニックネームが変わる | |
 | ST-M20 | F10 | 管理者役で `/edit_student member:@新メンバー役 unlink_discord:True` → [確定する] | 新メンバー役の Authorized・学年ロールが外れ Unauthorized が付く。新メンバー役が Bot に DM を送ると「名前 (フルネーム) を教えてください。」 | |
 | ST-M21 | F11 | 管理者役で `/list_students`、続けて `/list_students status:未認証` | 自分だけに学生の一覧が表示される。2 回目は未認証の人だけが表示される | |
+| ST-M22 | F12 | 管理者役で別の学生を `/register` で登録し、`/delete_student student_number:(その学籍番号)` → [削除する] | 「〇〇 さんの学生情報を削除しました。」。`/list_students` に表示されなくなる | |
 
 ## 8. 機能とテストの対応表
 
@@ -263,6 +267,7 @@ python -m pytest tests/system -v
 | F9 現役メンバーの年度更新 | `unit/controllers/test_year_update_controller.py`, `test_role_controller.py`, `unit/database/test_database_controller.py` | `test_database_api.py` | `test_f9_year_update.py` | ST-M15〜M18 |
 | F10 学生情報の手動変更 | `unit/controllers/test_student_edit_controller.py`, `test_student_controller.py`, `test_role_controller.py` | — | `test_f10_edit_student.py` | ST-M19, M20 |
 | F11 学生情報の一覧 | `unit/controllers/test_student_controller.py` | `test_commands_api.py` | `test_f11_list_students.py` | ST-M21 |
+| F12 学生情報の削除 | `unit/controllers/test_student_delete_controller.py`, `test_student_controller.py`, `unit/database/test_database_controller.py` | `test_database_api.py` | `test_f12_delete_student.py` | ST-M22 |
 | 永続化 | `unit/database/test_database_controller.py`, `unit/several_types/test_student_info.py` | `test_database_api.py` | `test_f2_register.py`, `test_f7_rejoin.py` | ST-M14 |
 | 設定 | `unit/utils/test_config.py` | — | — | 7.2 の起動 |
 | 構造 | — | `test_package_map.py`, `test_fakes_contract.py` | — | — |

@@ -6,7 +6,14 @@
 
 import pytest
 
-from controllers import StudentController, StudentEditError, StudentLinkError, StudentRegistrationError
+from controllers import (
+    StudentController,
+    StudentDeleteError,
+    StudentEditError,
+    StudentLinkError,
+    StudentNotFoundError,
+    StudentRegistrationError,
+)
 from several_types import Grade
 from tests.fakes import InMemoryDatabase
 
@@ -212,3 +219,51 @@ def test_一覧を学年と認証状態で絞り込める(controller):
     assert [s.name for s in controller.list_students(grade=Grade.B4)] == ["認証済み", "未認証"]
     assert [s.name for s in controller.list_students(authenticated=True)] == ["認証済み"]
     assert [s.name for s in controller.list_students(grade=Grade.B4, authenticated=False)] == ["未認証"]
+
+
+# ----------------------------------------------------------------------
+# 対象の指定 (find_target) と削除 (delete_student)
+# ----------------------------------------------------------------------
+
+
+def test_学籍番号かDiscordIDのどちらか一方で対象を探せる(controller):
+    student = controller.link_discord_id(register_yamada(controller).uuid, "111")
+    assert controller.find_target(student_number="ab123456") == student
+    assert controller.find_target(discord_id="111") == student
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    [
+        ({}, "どちらか一方を指定してください"),
+        ({"student_number": "AB123456", "discord_id": "111"}, "どちらか一方を指定してください"),
+        ({"student_number": "zz999999"}, "学籍番号 ZZ999999 の学生情報が見つかりません。"),
+        ({"discord_id": "999"}, "このメンバーに紐付いた学生情報が見つかりません。"),
+    ],
+)
+def test_対象を正しく指定しないとエラー(controller, target, message):
+    controller.link_discord_id(register_yamada(controller).uuid, "111")
+    with pytest.raises(StudentNotFoundError, match=message):
+        controller.find_target(**target)
+
+
+def test_学生情報を削除できる(controller, database):
+    student = register_yamada(controller)
+    controller.delete_student(student)
+    assert database.get_all() == []
+
+
+def test_確認した後に学生情報が変わっていたら削除しない(controller, database):
+    student = register_yamada(controller)
+    controller.apply_edit(controller.prepare_edit(student, new_name="山田 次郎"))
+
+    with pytest.raises(StudentDeleteError, match="やり直してください"):
+        controller.delete_student(student)
+    assert len(database.get_all()) == 1
+
+
+def test_すでに削除されていたらエラー(controller):
+    student = register_yamada(controller)
+    controller.delete_student(student)
+    with pytest.raises(StudentDeleteError, match="やり直してください"):
+        controller.delete_student(student)

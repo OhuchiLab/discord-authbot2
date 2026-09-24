@@ -94,3 +94,13 @@ def test_実行済みの年度で年度更新するとエラーになり_何も�
         database.commit_year_update([dataclasses.replace(STUDENT, grade=Grade.M1)], 2027)
 
     assert DatabaseController(filepath).find_by_uuid("uuid-1").grade == Grade.B4
+
+
+def test_削除した学生情報はファイルからも消える(tmp_path):
+    filepath = tmp_path / "students.msgpack"
+    database = DatabaseController(filepath)
+    database.add(STUDENT)
+
+    database.delete(STUDENT.uuid)
+
+    assert read_file(filepath)["students"] == []

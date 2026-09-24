@@ -1,5 +1,5 @@
 """
-学生情報の登録・検索・変更・Discord アカウントとの紐付けを行うコントローラー
+学生情報の登録・検索・変更・削除・Discord アカウントとの紐付けを行うコントローラー
 """
 
 import dataclasses
@@ -28,6 +28,22 @@ class StudentRegistrationError(Exception):
 class StudentEditError(Exception):
     """
     学生情報の変更に失敗したときに送出される例外
+
+    メッセージはそのまま Discord 上で管理者に表示されます。
+    """
+
+
+class StudentDeleteError(Exception):
+    """
+    学生情報の削除に失敗したときに送出される例外
+
+    メッセージはそのまま Discord 上で管理者に表示されます。
+    """
+
+
+class StudentNotFoundError(Exception):
+    """
+    変更・削除の対象の学生情報を特定できなかったときに送出される例外
 
     メッセージはそのまま Discord 上で管理者に表示されます。
     """
@@ -150,6 +166,34 @@ class StudentController:
             (s for s in self._database.get_all() if normalize_student_number(s.student_number) == target), None
         )
 
+    def find_target(self, student_number: str | None = None, discord_id: str | None = None) -> StudentInfo:
+        """
+        管理者が指定した対象の学生情報を探す (/edit_student・/delete_student で使う)
+
+        学籍番号 (`student_number`) か Discord ユーザー ID (`discord_id`) の、どちらか一方で指定します。
+
+        Returns:
+            StudentInfo: 見つかった学生情報
+
+        Raises:
+            StudentNotFoundError: 指定が 0 個・2 個、または見つからない場合
+        """
+        if (student_number is None) == (discord_id is None):
+            raise StudentNotFoundError(
+                "学籍番号 (student_number) か メンバー (member) のどちらか一方を指定してください。"
+            )
+        if student_number is not None:
+            student = self.find_by_student_number(student_number)
+            if student is None:
+                raise StudentNotFoundError(
+                    f"学籍番号 {normalize_student_number(student_number)} の学生情報が見つかりません。"
+                )
+            return student
+        student = self.find_by_discord_id(discord_id)
+        if student is None:
+            raise StudentNotFoundError("このメンバーに紐付いた学生情報が見つかりません。")
+        return student
+
     def find_by_discord_id(self, discord_id: str) -> StudentInfo | None:
         """
         Discord ID に紐付いた (= 認証済みの) 学生情報を返す。見つからなければ None
@@ -270,6 +314,24 @@ class StudentController:
             raise StudentEditError(problem)
         self._database.update(edit.after)
         return edit.after
+
+    def delete_student(self, student: StudentInfo) -> None:
+        """
+        学生情報を削除する
+
+        確認した後に、他の管理者などがこの学生情報を変更・削除していた場合は削除しません。
+
+        Args:
+            student (StudentInfo): 削除する学生情報 (管理者が確認画面で見た内容)
+
+        Raises:
+            StudentDeleteError: 学生情報が変更・削除されていた場合 (何も変更しない)
+        """
+        if self._database.find_by_uuid(student.uuid) != student:
+            raise StudentDeleteError(
+                "確認している間に、この学生情報が変更・削除されました。もう一度 /delete_student からやり直してください。"
+            )
+        self._database.delete(student.uuid)
 
     # ------------------------------------------------------------------
     # 内部処理 (登録と変更で共通の確認)

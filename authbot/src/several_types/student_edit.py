@@ -1,5 +1,5 @@
 """
-学生情報の手動変更で使うデータクラス定義
+学生情報の手動変更・削除で使うデータクラス定義
 """
 
 from dataclasses import dataclass
@@ -55,6 +55,24 @@ class StudentEditResult:
         discord_synced (bool): Discord のニックネーム・ロールを変更したかどうか
         not_in_server (bool): 認証済みだがサーバーにいないため、Discord に反映できなかったかどうか
         problems (list[str]): Discord への反映でうまくいかなかった処理の説明
+    """
+
+    student: StudentInfo
+    discord_synced: bool
+    not_in_server: bool
+    problems: list[str]
+
+
+@dataclass(frozen=True)
+class StudentDeleteResult:
+    """
+    学生情報の削除を確定した結果
+
+    Attributes:
+        student (StudentInfo): 削除した学生情報
+        discord_synced (bool): Discord 上で未認証の状態に戻したかどうか
+        not_in_server (bool): 認証済みだがサーバーにいないため、Discord は変更しなかったかどうか
+        problems (list[str]): Discord の変更でうまくいかなかった処理の説明
     """
 
     student: StudentInfo

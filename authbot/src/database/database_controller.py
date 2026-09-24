@@ -97,6 +97,23 @@ class DatabaseController:
                 return
         raise KeyError(f"uuid {student.uuid} は存在しません")
 
+    def delete(self, uuid: str) -> None:
+        """
+        uuid が一致する学生情報を削除してファイルに保存する
+
+        Args:
+            uuid (str): 削除する学生情報の uuid
+
+        Raises:
+            KeyError: 同じ uuid の学生情報が存在しない場合
+        """
+        for index, current in enumerate(self._students):
+            if current.uuid == uuid:
+                del self._students[index]
+                self.save()
+                return
+        raise KeyError(f"uuid {uuid} は存在しません")
+
     def completed_fiscal_years(self) -> set[int]:
         """
         現役更新を実行済みの年度を返す

@@ -15,7 +15,7 @@ from external import MemberNotFoundError
 from several_types import Grade, StudentEdit, StudentEditResult, StudentInfo
 
 from .role_controller import RoleController
-from .student_controller import StudentController, StudentEditError
+from .student_controller import StudentController, StudentEditError, StudentNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,10 @@ class StudentEditController:
         Raises:
             StudentEditError: 対象の指定が正しくない、見つからない、または変更内容が不正な場合
         """
-        student = self._find_target(student_number, discord_id)
+        try:
+            student = self._students.find_target(student_number=student_number, discord_id=discord_id)
+        except StudentNotFoundError as error:
+            raise StudentEditError(str(error)) from error
         return self._students.prepare_edit(
             student,
             new_name=new_name,
@@ -100,20 +103,6 @@ class StudentEditController:
     # ------------------------------------------------------------------
     # 内部処理
     # ------------------------------------------------------------------
-
-    def _find_target(self, student_number: str | None, discord_id: str | None) -> StudentInfo:
-        """学籍番号か Discord ユーザー ID のどちらか一方で、対象の学生情報を探す"""
-        if (student_number is None) == (discord_id is None):
-            raise StudentEditError("学籍番号 (student_number) か メンバー (member) のどちらか一方を指定してください。")
-        if student_number is not None:
-            student = self._students.find_by_student_number(student_number)
-            if student is None:
-                raise StudentEditError(f"学籍番号 {student_number.strip().upper()} の学生情報が見つかりません。")
-            return student
-        student = self._students.find_by_discord_id(discord_id)
-        if student is None:
-            raise StudentEditError("このメンバーに紐付いた学生情報が見つかりません。")
-        return student
 
     async def _sync_discord(self, user_id: str, student: StudentInfo, revoke: bool) -> StudentEditResult:
         """Discord のニックネーム・ロールに反映する。サーバーにいなければ反映しない"""

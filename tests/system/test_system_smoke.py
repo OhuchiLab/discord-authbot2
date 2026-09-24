@@ -24,7 +24,7 @@ async def test_ST_A02_Botが使うロールがすべてサーバーにある(run
 
 async def test_ST_A03_スラッシュコマンドがサーバーに登録されている(running_bot):
     commands = await running_bot.tree.fetch_commands(guild=running_bot.guild_object)
-    assert {"health_check", "register", "auth", "update_grades", "edit_student", "list_students"} <= {command.name for command in commands}
+    assert {"health_check", "register", "auth", "update_grades", "edit_student", "list_students", "delete_student"} <= {command.name for command in commands}
 
 
 async def test_ST_A04_テスト担当者にDMを送れる(running_bot):
