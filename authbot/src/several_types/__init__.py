@@ -3,6 +3,7 @@
 
 | モジュール | 内容 |
 | --- | --- |
+| `exported_file` | /export_students で書き出したファイル (`ExportedFile`) |
 | `grade` | 学年 (`Grade`) |
 | `student_info` | データベースに保存する学生情報 (`StudentInfo`) |
 | `auth_session` | DM 認証手続きの途中経過 (`AuthSession`, `AuthStep`) |
@@ -12,6 +13,7 @@
 """
 
 from .auth_session import AuthSession, AuthStep
+from .exported_file import ExportedFile
 from .grade import Grade
 from .role_definition import (
     ADMINISTRATOR_ROLE,

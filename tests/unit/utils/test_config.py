@@ -21,6 +21,8 @@ ALL_NAMES = [
     "SMTP_USER",
     "SMTP_PASSWORD",
     "MAIL_FROM",
+    "BACKUP_DIR",
+    "BACKUP_KEEP",
 ]
 
 
@@ -80,4 +82,27 @@ def test_形式が不正な値はエラー(tmp_path, monkeypatch, name, value):
     env_file = write_env(tmp_path, "DISCORD_TOKEN=token\nGUILD_ID=1000\nSMTP_HOST=h\nMAIL_FROM=a@example.com\n")
     monkeypatch.setenv(name, value)
     with pytest.raises(ConfigError, match=name):
+        load_config(env_file)
+
+
+def test_バックアップの設定は既定値を持つ(tmp_path):
+    env_file = write_env(tmp_path, "DISCORD_TOKEN=token\nGUILD_ID=1000\nSMTP_HOST=h\nMAIL_FROM=a@example.com\n")
+    config = load_config(env_file)
+    assert (config.backup_dir, config.backup_keep) == (Path("data/backups"), 50)
+
+
+def test_バックアップの設定を変えられる(tmp_path):
+    env_file = write_env(
+        tmp_path,
+        "DISCORD_TOKEN=token\nGUILD_ID=1000\nSMTP_HOST=h\nMAIL_FROM=a@example.com\n"
+        "BACKUP_DIR=/mnt/nas/authbot\nBACKUP_KEEP=0\n",
+    )
+    config = load_config(env_file)
+    assert (config.backup_dir, config.backup_keep) == (Path("/mnt/nas/authbot"), 0)
+
+
+def test_残すバックアップの数が負ならエラー(tmp_path, monkeypatch):
+    env_file = write_env(tmp_path, "DISCORD_TOKEN=token\nGUILD_ID=1000\nSMTP_HOST=h\nMAIL_FROM=a@example.com\n")
+    monkeypatch.setenv("BACKUP_KEEP", "-1")
+    with pytest.raises(ConfigError, match="BACKUP_KEEP"):
         load_config(env_file)

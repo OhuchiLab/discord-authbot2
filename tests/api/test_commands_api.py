@@ -39,7 +39,7 @@ def all_descriptions(payloads: list[dict]) -> list[tuple[str, str]]:
 
 
 def test_登録されるコマンドの一覧(command_payloads):
-    assert [c["name"] for c in command_payloads] == ["health_check", "register", "auth", "update_grades", "edit_student", "list_students", "delete_student"]
+    assert [c["name"] for c in command_payloads] == ["health_check", "register", "auth", "update_grades", "edit_student", "list_students", "delete_student", "export_students"]
 
 
 def test_説明文はDiscordの上限文字数以内(command_payloads):
@@ -49,7 +49,7 @@ def test_説明文はDiscordの上限文字数以内(command_payloads):
 
 def test_管理者用コマンドは説明でそれとわかる(command_payloads):
     for command in command_payloads:
-        if command["name"] in {"register", "update_grades", "edit_student", "list_students", "delete_student"}:
+        if command["name"] in {"register", "update_grades", "edit_student", "list_students", "delete_student", "export_students"}:
             assert command["description"].startswith("【管理者用】"), command["name"]
 
 

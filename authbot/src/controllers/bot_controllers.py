@@ -13,6 +13,7 @@ from database import DatabaseController
 from external import DiscordGateway, MailSender
 
 from .auth_flow_controller import AuthFlowController
+from .export_controller import ExportController
 from .onboarding_controller import OnboardingController
 from .role_controller import RoleController
 from .student_controller import StudentController
@@ -34,6 +35,7 @@ class BotControllers:
         year_update (YearUpdateController): 現役メンバーの年度更新
         student_edit (StudentEditController): 学生情報の手動変更
         student_delete (StudentDeleteController): 学生情報の削除
+        export (ExportController): 学生情報の書き出し
     """
 
     student: StudentController
@@ -43,6 +45,7 @@ class BotControllers:
     year_update: YearUpdateController
     student_edit: StudentEditController
     student_delete: StudentDeleteController
+    export: ExportController
 
 
 def build_controllers(
@@ -72,6 +75,7 @@ def build_controllers(
     year_update = YearUpdateController(database, role, today)
     student_edit = StudentEditController(student, role)
     student_delete = StudentDeleteController(student, role)
+    export = ExportController(database, today)
     return BotControllers(
         student=student,
         auth_flow=auth_flow,
@@ -80,4 +84,5 @@ def build_controllers(
         year_update=year_update,
         student_edit=student_edit,
         student_delete=student_delete,
+        export=export,
     )

@@ -4,6 +4,8 @@ database.DatabaseController の偽物
 ファイルを使わず、学生情報をメモリ上だけに保持します。
 """
 
+import msgpack
+
 from several_types import StudentInfo
 
 
@@ -65,6 +67,15 @@ class InMemoryDatabase:
             self._students[indexes[student.uuid]] = student
         self._completed_fiscal_years.add(fiscal_year)
         self.save()
+
+    def dump(self) -> bytes:
+        return msgpack.packb(
+            {
+                "format_version": 2,
+                "students": [student.to_dict() for student in self._students],
+                "completed_fiscal_years": sorted(self._completed_fiscal_years),
+            }
+        )
 
     def save(self) -> None:
         self.save_count += 1

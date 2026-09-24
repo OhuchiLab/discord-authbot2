@@ -20,6 +20,8 @@ import msgpack
 
 from several_types import StudentInfo
 
+from .database_backup import DatabaseBackup
+
 FORMAT_VERSION = 2
 """学生情報ファイルの形式のバージョン"""
 
@@ -32,17 +34,21 @@ class DatabaseController:
     入力値のチェックや重複の判定は `controllers.StudentController` が行います。
     """
 
-    def __init__(self, filepath: Path):
+    def __init__(self, filepath: Path, backup: DatabaseBackup | None = None):
         """
         コンストラクタ。ファイルが存在すれば、その内容を読み込む
 
         Args:
             filepath (Path): データベースの情報を保存するファイルのパス
+            backup (DatabaseBackup | None): 指定すると、起動時 (ファイルがあれば) と保存のたびにバックアップを取る
         """
         self._filepath = Path(filepath)
+        self._backup = backup
         self._students: list[StudentInfo] = []
         self._completed_fiscal_years: set[int] = set()
         self._load()
+        if self._backup is not None and self._filepath.exists():
+            self._backup.create(self._filepath)
 
     def get_all(self) -> list[StudentInfo]:
         """
@@ -150,30 +156,42 @@ class DatabaseController:
         self._completed_fiscal_years.add(fiscal_year)
         self.save()
 
-    def save(self) -> None:
+    def dump(self) -> bytes:
         """
-        メモリ上の学生情報をファイルに保存する
+        学生情報ファイルに書き込む内容 (msgpack のバイト列) を返す
 
-        書き込み途中で Bot が停止してもファイルが壊れないよう、
-        一時ファイルに書き込んでから本来のファイル名に置き換えます。
+        Returns:
+            bytes: `save()` でファイルに書き込むのと同じ内容
         """
-        self._filepath.parent.mkdir(parents=True, exist_ok=True)
         pack_data = {
             "format_version": FORMAT_VERSION,
             "students": [student.to_dict() for student in self._students],
             "completed_fiscal_years": sorted(self._completed_fiscal_years),
         }
+        return msgpack.packb(pack_data)
+
+    def save(self) -> None:
+        """
+        メモリ上の学生情報をファイルに保存する。バックアップの設定があれば、保存後にコピーを残す
+
+        書き込み途中で Bot が停止してもファイルが壊れないよう、
+        一時ファイルに書き込んでから本来のファイル名に置き換えます。
+        """
+        self._filepath.parent.mkdir(parents=True, exist_ok=True)
 
         fd, temp_path = tempfile.mkstemp(dir=self._filepath.parent, prefix=".tmp-")
         try:
             with os.fdopen(fd, "wb") as f:
-                msgpack.pack(pack_data, f)
+                f.write(self.dump())
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temp_path, self._filepath)
         except BaseException:
             os.remove(temp_path)
             raise
+
+        if self._backup is not None:
+            self._backup.create(self._filepath)
 
     def _load(self) -> None:
         """
@@ -189,3 +207,19 @@ class DatabaseController:
             pack_data = {"students": pack_data, "completed_fiscal_years": []}
         self._students = [StudentInfo.from_dict(data) for data in pack_data["students"]]
         self._completed_fiscal_years = set(pack_data["completed_fiscal_years"])
+
+
+def open_database(filepath: Path, backup_dir: Path | None, backup_keep: int) -> DatabaseController:
+    """
+    バックアップの設定に合わせて DatabaseController を作る (main.py と機能テストで共通に使う)
+
+    Args:
+        filepath (Path): 学生情報ファイル
+        backup_dir (Path | None): バックアップの保存先。None ならバックアップを取らない
+        backup_keep (int): 残すバックアップの数。0 ならバックアップを取らない
+
+    Returns:
+        DatabaseController: 学生情報データベース
+    """
+    backup = DatabaseBackup(backup_dir, backup_keep) if backup_dir is not None and backup_keep > 0 else None
+    return DatabaseController(filepath, backup=backup)

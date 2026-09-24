@@ -17,6 +17,16 @@ from utils import (
 )
 
 
+def sort_students(students: list[StudentInfo]) -> list[StudentInfo]:
+    """
+    学生情報を、学年順 (`Grade` の定義順)・同じ学年の中は学籍番号順に並べ替える
+
+    /list_students と /export_students で同じ並び順にするために使う
+    """
+    grade_order = {grade: index for index, grade in enumerate(Grade)}
+    return sorted(students, key=lambda s: (grade_order[s.grade], normalize_student_number(s.student_number)))
+
+
 class StudentRegistrationError(Exception):
     """
     学生情報の登録に失敗したときに送出される例外
@@ -148,14 +158,13 @@ class StudentController:
         Returns:
             list[StudentInfo]: 条件に合う学生情報
         """
-        grade_order = {g: index for index, g in enumerate(Grade)}
         students = [
             student
             for student in self._database.get_all()
             if (grade is None or student.grade == grade)
             and (authenticated is None or (student.discord_id is not None) == authenticated)
         ]
-        return sorted(students, key=lambda s: (grade_order[s.grade], normalize_student_number(s.student_number)))
+        return sort_students(students)
 
     def find_by_student_number(self, student_number: str) -> StudentInfo | None:
         """

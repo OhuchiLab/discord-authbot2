@@ -28,6 +28,7 @@ discord-authbot2/
 │       │   ├── list_students_view.py  # /list_students の一覧表示 (ページ切り替えのボタン)
 │       │   ├── delete_student.py      # /delete_student
 │       │   ├── delete_student_view.py # /delete_student の確認画面 (削除・キャンセルのボタン)
+│       │   ├── export_students.py     # /export_students
 │       │   ├── edit_student.py        # /edit_student
 │       │   ├── edit_student_view.py   # /edit_student の確認画面 (確定・キャンセルのボタン)
 │       │   ├── update_grades.py       # /update_grades
@@ -38,6 +39,7 @@ discord-authbot2/
 │       │   └── on_message.py
 │       ├── controllers/       # 業務ロジック (Discord に依存しない)
 │       │   ├── bot_controllers.py
+│       │   ├── export_controller.py
 │       │   ├── onboarding_controller.py
 │       │   ├── auth_flow_controller.py
 │       │   ├── student_controller.py
@@ -46,7 +48,8 @@ discord-authbot2/
 │       │   ├── role_controller.py
 │       │   └── year_update_controller.py
 │       ├── database/          # 学生情報の保存
-│       │   └── database_controller.py
+│       │   ├── database_controller.py
+│       │   └── database_backup.py
 │       ├── external/          # 外部機能 (Discord API・SMTP)
 │       │   ├── discord_gateway.py
 │       │   └── mail_sender.py
@@ -54,6 +57,7 @@ discord-authbot2/
 │       │   ├── grade.py
 │       │   ├── student_info.py
 │       │   ├── auth_session.py
+│       │   ├── exported_file.py
 │       │   ├── role_definition.py
 │       │   ├── student_edit.py
 │       │   └── year_update.py
@@ -260,6 +264,7 @@ classDiagram
 | `/register` | `register.py` | `name`, `student_number`, `grade` (選択式), `email` | `defer` → `RoleController.is_admin()` → `StudentController.register_student()` → 結果を返す |
 | `/auth` | `auth.py` | なし | `defer` → `OnboardingController.request_auth()` の戻り値を返す |
 | `/delete_student` | `delete_student.py` | 対象: `student_number` または `member` (どちらか一方) | `defer` → `RoleController.is_admin()` → `StudentDeleteController.prepare()` → 確認画面 (`StudentDeleteView`) を表示 |
+| `/export_students` | `export_students.py` | `format` (CSV / msgpack、省略すると CSV) | `defer` → `RoleController.is_admin()` → `ExportController.export_csv()` / `export_msgpack()` → ファイルを添付して返す。誰が書き出したかをログに残す |
 | `/edit_student` | `edit_student.py` | 対象: `student_number` または `member` (どちらか一方)<br/>変更: `new_name`, `new_student_number`, `new_grade` (選択式), `new_email`, `unlink_discord` (真偽値) | `defer` → `RoleController.is_admin()` → `StudentEditController.prepare()` → 確認画面 (`StudentEditView`) を表示 |
 | `/list_students` | `list_students.py` | `grade` (選択式、省略可), `status` (認証済み / 未認証、省略可) | `defer` → `RoleController.is_admin()` → `StudentController.list_students()` → 一覧 (`StudentListView`) を表示。該当者がいなければ「条件に合う学生はいません。」 |
 | `/update_grades` | `update_grades.py` | `fiscal_year` (年度。整数 2000〜2100、省略可) | `defer` → `RoleController.is_admin()` → `YearUpdateController.create_plan()` → 確認画面 (`YearUpdateView`) を表示 |
@@ -456,6 +461,15 @@ stateDiagram-v2
 戻り値 `StudentEditResult` には、変更後の学生情報、Discord に反映したか、サーバーにいなかったか、うまくいかなかった説明が入る。
 Discord への反映に失敗しても学生情報の変更は取り消さない。
 
+#### `export_controller.py` — `ExportController`
+
+学生情報の書き出し (F13) を担当する。ファイル名は `students-YYYYMMDD.csv` / `.msgpack` (日付は `today` で差し替え可)。
+
+| メソッド | 中身 |
+| --- | --- |
+| `export_csv()` | 見出し「氏名, 学籍番号, 学年, メールアドレス, Discord ID, uuid」+ 1 人 1 行。並び順は `/list_students` と同じ (`student_controller.sort_students()`)。Excel で文字化けしないよう BOM 付き UTF-8、改行は CRLF |
+| `export_msgpack()` | `DatabaseController.dump()` (学生情報ファイルとまったく同じ内容)。そのまま学生情報ファイルとして復元に使える |
+
 #### `student_delete_controller.py` — `StudentDeleteController`
 
 学生情報の削除 (F12) の流れを担当する。
@@ -509,6 +523,26 @@ Discord の変更に失敗しても学生情報の削除は取り消さない。
 3. `flush()` と `os.fsync()` でディスクへの書き込みを確定させる。
 4. `os.replace()` で本来のファイル名に置き換える (置き換えは一瞬で行われる)。
 5. 途中で失敗したら一時ファイルを削除し、例外をそのまま投げる。
+
+#### `database_backup.py` — `DatabaseBackup` (F14)
+
+- `DatabaseBackup(backup_dir, keep)`: `create(source)` で `backup_dir/<元の名前>-<YYYYMMDD-HHMMSS-マイクロ秒><拡張子>` のコピーを作り、
+  同じ元ファイルのコピーのうち新しい `keep` 個を残して古いものを消す。コピーも一時ファイル経由で作るため、途中で止まっても壊れたコピーは残らない。
+- `DatabaseController(filepath, backup)` に渡すと、**起動時 (ファイルがあれば) と `save()` のたび** にコピーを作る。
+- `open_database(filepath, backup_dir, backup_keep)`: 設定に合わせて `DatabaseController` を作る。`backup_dir` が None か `backup_keep` が 0 ならバックアップを取らない。
+  `main.py` と機能テストの `BotDriver` はこの関数で組み立てる。
+- `DatabaseController.dump()`: ファイルに書き込む内容 (msgpack のバイト列) を返す。`save()` と `/export_students` (msgpack) で使う。
+
+**復元の手順**
+
+1. Bot を止める (`sudo systemctl stop authbot`、または `Ctrl+C`)。
+2. 戻したいコピーを学生情報ファイルに上書きする。
+   ```shell
+   ls data/backups/                                                    # 日時で選ぶ
+   cp data/backups/students-20270301-093015-123456.msgpack data/students.msgpack
+   ```
+   `/export_students format:msgpack` で受け取ったファイルも、同じように上書きして使える。
+3. Bot を起動する。起動時に、復元した状態のコピーが新しく作られる。
 
 #### 学生情報ファイルの形式
 
@@ -594,6 +628,7 @@ discord.py の例外は、次の例外に変換して送出する (すべて `Di
 | `auth_session.py` | `AuthStep` (Enum), `AuthSession` (dataclass) | 認証手続きの段階と途中経過 |
 | `role_definition.py` | `RoleDefinition` と各ロール定数 | ロール名・色の一覧。**ロールの変更はこのファイルだけで行う** |
 | `student_edit.py` | `StudentEdit`, `StudentEditResult`, `StudentDeleteResult` (frozen dataclass), `FIELD_LABELS` | 手動変更の内容 (変更前・変更後) と結果、削除の結果。`changed_fields()` は変わる項目の表示名、`unlinks_discord` は紐付けを解除する変更か |
+| `exported_file.py` | `ExportedFile` (frozen dataclass) | 書き出したファイル (ファイル名・中身・人数) |
 | `year_update.py` | `YearUpdateCandidate`, `YearUpdatePlan` (dataclass), `YearUpdateResult` (frozen dataclass) | 現役更新の候補 (1 人分)・計画 (一覧)・確定結果。`is_changed` は既定の更新先から変更されたか |
 
 ### 3.8 `utils` パッケージ
@@ -614,6 +649,8 @@ discord.py の例外は、次の例外に変換して送出する (すべて `Di
 | `SMTP_USER` | | (ログインしない) | SMTP ユーザー名 |
 | `SMTP_PASSWORD` | | | SMTP パスワード |
 | `MAIL_FROM` | `SMTP_USER` が無ければ ○ | `SMTP_USER` | 差出人アドレス |
+| `BACKUP_DIR` | | `data/backups` | バックアップの保存先。ディスクの故障に備えるなら外付けディスクや NAS を指定する |
+| `BACKUP_KEEP` | | `50` | 残すバックアップの数 (0 以上の整数。0 ならバックアップを取らない) |
 
 必須項目が無い、または整数・真偽値であるべき項目の形式が不正な場合は `ConfigError`。
 
