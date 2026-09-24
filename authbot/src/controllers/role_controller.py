@@ -16,6 +16,9 @@ from several_types import (
 
 logger = logging.getLogger(__name__)
 
+ROLE_PERMISSION_PROBLEM = "ロールを付与できませんでした。管理者に連絡してください。"
+"""ロールを付け外しできなかったときに、ユーザーに表示する説明"""
+
 
 class RoleController:
     """
@@ -64,8 +67,8 @@ class RoleController:
         メンバーを認証済みの状態にする
 
         1. ニックネームを学生情報の氏名に変更する
-        2. 認証済み (Authorized) ロールと学年ロールを付与する
-        3. 未認証 (Unauthorized) ロールと、他の学年のロールを外す
+        2. 認証済み (Authorized) ロールを付け、未認証 (Unauthorized) ロールを外す
+        3. 学年ロールを学生情報に合わせる (`sync_grade_role()`)
 
         権限不足で失敗した処理があっても、残りの処理は続けます。
 
@@ -89,16 +92,43 @@ class RoleController:
                 "ニックネームを変更できませんでした。(サーバーのオーナーや、Bot より上位のロールを持つメンバーは変更できません)"
             )
 
+        try:
+            await self._discord.add_roles(user_id, [AUTHORIZED_ROLE])
+            await self._discord.remove_roles(user_id, [UNAUTHORIZED_ROLE])
+        except DiscordPermissionError:
+            logger.error("No permission to update roles of user %s", user_id)
+            problems.append(ROLE_PERMISSION_PROBLEM)
+            return problems
+
+        problems += await self.sync_grade_role(user_id, student)
+        return problems
+
+    async def sync_grade_role(self, user_id: str, student: StudentInfo) -> list[str]:
+        """
+        メンバーの学年ロールを、学生情報の学年に合わせる (ニックネームなど他は変更しない)
+
+        学生情報の学年のロールだけを付け、他の学年のロールは外します。
+        卒業・修了した学生 (学年が OB/OG) は、学年ロールが外れて OB/OG ロールが付きます。
+
+        Args:
+            user_id (str): 対象の Discord ユーザー ID
+            student (StudentInfo): メンバーの学生情報
+
+        Returns:
+            list[str]: うまくいかなかった処理の説明 (ユーザーに表示する)。成功したら空のリスト
+
+        Raises:
+            MemberNotFoundError: メンバーがサーバーに参加していない場合
+        """
         grade_role = GRADE_ROLES[student.grade]
         other_grade_roles = [role for role in GRADE_ROLES.values() if role != grade_role]
         try:
-            await self._discord.add_roles(user_id, [AUTHORIZED_ROLE, grade_role])
-            await self._discord.remove_roles(user_id, [UNAUTHORIZED_ROLE, *other_grade_roles])
+            await self._discord.add_roles(user_id, [grade_role])
+            await self._discord.remove_roles(user_id, other_grade_roles)
         except DiscordPermissionError:
-            logger.error("No permission to update roles of user %s", user_id)
-            problems.append("ロールを付与できませんでした。管理者に連絡してください。")
-
-        return problems
+            logger.error("No permission to update grade roles of user %s", user_id)
+            return [ROLE_PERMISSION_PROBLEM]
+        return []
 
     async def is_admin(self, user_id: str) -> bool:
         """

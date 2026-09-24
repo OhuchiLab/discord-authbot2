@@ -9,6 +9,7 @@ Discord から届くはずの操作 (参加・DM・スラッシュコマンド) 
 | AuthBot, commands, events, controllers, database (一時フォルダのファイル) | DiscordGateway, MailSender, Discord から渡されるオブジェクト |
 """
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ import pytest
 from bot import AuthBot
 from controllers import build_controllers
 from database import DatabaseController
-from several_types import ADMINISTRATOR_ROLE, Grade
+from several_types import ADMINISTRATOR_ROLE, AUTHORIZED_ROLE, GRADE_ROLES, Grade, StudentInfo
 from tests.fakes import (
     FakeDiscordGateway,
     FakeDiscordMember,
@@ -25,6 +26,7 @@ from tests.fakes import (
     FakeInteraction,
     FakeMailSender,
     FakeUser,
+    SentResponse,
 )
 from utils import BotConfig
 
@@ -42,12 +44,14 @@ class BotDriver:
         discord (FakeDiscordGateway): Discord の状態 (ロール・ニックネーム・送った DM)
         mail (FakeMailSender): 送ったメール
         database_path (Path): 学生情報ファイル
+        today (date): Bot から見た今日の日付 (年度の計算に使う。テストから変更できる)
     """
 
     def __init__(self, tmp_path: Path):
         self.database_path = tmp_path / "students.msgpack"
         self.discord = FakeDiscordGateway()
         self.mail = FakeMailSender()
+        self.today = date(2027, 3, 1)
         self.bot = self._build_bot()
         self.discord.add_member(ADMIN_ID, roles=(ADMINISTRATOR_ROLE.name,))
 
@@ -67,7 +71,11 @@ class BotDriver:
         )
         bot = AuthBot(config)
         bot.controllers = build_controllers(
-            DatabaseController(config.database_path), self.mail, self.discord, config.allowed_email_domain
+            DatabaseController(config.database_path),
+            self.mail,
+            self.discord,
+            config.allowed_email_domain,
+            today=lambda: self.today,
         )
         bot.register_commands()
         return bot
@@ -101,13 +109,47 @@ class BotDriver:
         )
 
     async def run_command(self, user_id: str, command_name: str, /, **options) -> str:
-        """スラッシュコマンドを実行し、実行者への最後の応答を返す (応答は ephemeral であることも確認する)"""
+        """スラッシュコマンドを実行し、実行者への最後の応答の本文を返す"""
+        response = await self.run_command_for_response(user_id, command_name, **options)
+        return response.text
+
+    async def run_command_for_response(self, user_id: str, command_name: str, /, **options) -> SentResponse:
+        """
+        スラッシュコマンドを実行し、最後の応答を丸ごと返す (埋め込み表示やボタンを確認したいとき)
+
+        応答がすべて実行者だけに見える (ephemeral) ことも確認する
+        """
         command = self.bot.tree.get_command(command_name, guild=self.bot.guild_object)
         assert command is not None, f"/{command_name} が登録されていません"
         interaction = FakeInteraction(FakeUser(id=int(user_id)), FakeGuild(GUILD_ID))
         await command.callback(interaction, **options)
         assert all(response.ephemeral for response in interaction.sent), "応答は実行者だけに見える必要があります"
-        return interaction.sent[-1].text
+        return interaction.sent[-1]
+
+    def component_interaction(self, user_id: str) -> FakeInteraction:
+        """ボタンやセレクトメニューを操作したときのインタラクション"""
+        return FakeInteraction(FakeUser(id=int(user_id)), FakeGuild(GUILD_ID))
+
+    # ------------------------------------------------------------------
+    # 学生情報の準備・確認
+    # ------------------------------------------------------------------
+
+    def add_student(self, name: str, student_number: str, grade: Grade, discord_id: str | None = None) -> StudentInfo:
+        """
+        学生情報を登録する。discord_id を指定すると、認証済みでサーバーにいる状態にする
+        (Authorized ロールと学年ロールを持った状態)
+        """
+        student = self.bot.controllers.student.register_student(
+            name, student_number, grade, f"{student_number.lower()}@shizuoka.ac.jp"
+        )
+        if discord_id is None:
+            return student
+        self.discord.add_member(discord_id, roles=(AUTHORIZED_ROLE.name, GRADE_ROLES[grade].name))
+        return self.bot.controllers.student.link_discord_id(student.uuid, discord_id)
+
+    def saved_grade(self, student: StudentInfo) -> Grade:
+        """学生情報ファイルに保存されている学年"""
+        return DatabaseController(self.database_path).find_by_uuid(student.uuid).grade
 
     # ------------------------------------------------------------------
     # よく使う一連の操作
