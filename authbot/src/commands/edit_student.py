@@ -75,5 +75,5 @@ def setup_edit_student_command(bot: AuthBot) -> None:
             await interaction.followup.send(str(error), ephemeral=True)
             return
 
-        view = StudentEditView(bot.controllers.student_edit, edit, interaction.user.id, interaction)
+        view = StudentEditView(bot.controllers.student_edit, bot.controllers.audit, edit, interaction.user.id, interaction)
         await interaction.followup.send(embed=view.render(), view=view, ephemeral=True)

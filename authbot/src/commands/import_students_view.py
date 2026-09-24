@@ -17,7 +17,7 @@ import logging
 
 import discord
 
-from controllers import ImportController, StudentImportError
+from controllers import AuditLogController, ImportController, StudentImportError
 from several_types import ImportRow, StudentImportPlan
 from utils import normalize_email, normalize_input, normalize_student_number
 
@@ -71,6 +71,7 @@ class StudentImportView(discord.ui.View):
     def __init__(
         self,
         controller: ImportController,
+        audit: AuditLogController,
         plan: StudentImportPlan,
         admin_id: int,
         original_interaction: discord.Interaction,
@@ -80,12 +81,14 @@ class StudentImportView(discord.ui.View):
 
         Args:
             controller (ImportController): 登録の確定に使う
+            audit (AuditLogController): 確定した操作をログ用チャンネルに記録するのに使う
             plan (StudentImportPlan): 表示する登録内容 (問題が無いもの)
             admin_id (int): /import_students を実行した管理者の Discord ユーザー ID (この人だけが操作できる)
             original_interaction (discord.Interaction): /import_students の実行 (時間切れのときに画面を書き換えるため)
         """
         super().__init__(timeout=TIMEOUT_SECONDS)
         self._controller = controller
+        self._audit = audit
         self._plan = plan
         self._admin_id = admin_id
         self._original_interaction = original_interaction
@@ -121,6 +124,7 @@ class StudentImportView(discord.ui.View):
         except StudentImportError as error:
             await interaction.edit_original_response(content=str(error), embed=None, view=None)
             return
+        await self._audit.students_imported(str(self._admin_id), registered)
         await interaction.edit_original_response(
             content=f"{len(registered)} 人の学生情報を登録しました。", embed=None, view=None
         )

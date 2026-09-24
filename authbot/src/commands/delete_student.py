@@ -59,5 +59,7 @@ def setup_delete_student_command(bot: AuthBot) -> None:
             await interaction.followup.send(str(error), ephemeral=True)
             return
 
-        view = StudentDeleteView(bot.controllers.student_delete, student, interaction.user.id, interaction)
+        view = StudentDeleteView(
+            bot.controllers.student_delete, bot.controllers.audit, student, interaction.user.id, interaction
+        )
         await interaction.followup.send(embed=view.render(), view=view, ephemeral=True)

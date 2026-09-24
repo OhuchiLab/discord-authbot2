@@ -16,6 +16,17 @@ FIELD_LABELS: dict[str, str] = {
 """StudentInfo の項目名と、画面に表示する名前"""
 
 
+def describe_value(student: StudentInfo, field: str) -> str:
+    """
+    学生情報の 1 項目を、画面やログに表示する文字列にする (学年は "B4"、Discord は "<@ID>" か "なし (未認証)")
+    """
+    if field == "grade":
+        return student.grade.value
+    if field == "discord_id":
+        return f"<@{student.discord_id}>" if student.discord_id else "なし (未認証)"
+    return str(getattr(student, field))
+
+
 @dataclass(frozen=True)
 class StudentEdit:
     """
@@ -37,6 +48,16 @@ class StudentEdit:
         """
         return [
             label for field, label in FIELD_LABELS.items() if getattr(self.before, field) != getattr(self.after, field)
+        ]
+
+    def describe_changes(self) -> list[str]:
+        """
+        変更される項目を「項目名: 変更前 → 変更後」の形で返す (例: ["学年: B4 → M1"])
+        """
+        return [
+            f"{label}: {describe_value(self.before, field)} → {describe_value(self.after, field)}"
+            for field, label in FIELD_LABELS.items()
+            if getattr(self.before, field) != getattr(self.after, field)
         ]
 
     @property

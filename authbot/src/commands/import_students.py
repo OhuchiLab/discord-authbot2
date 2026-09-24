@@ -65,5 +65,7 @@ def setup_import_students_command(bot: AuthBot) -> None:
             await interaction.followup.send(describe_errors(plan.errors), ephemeral=True)
             return
 
-        view = StudentImportView(bot.controllers.student_import, plan, interaction.user.id, interaction)
+        view = StudentImportView(
+            bot.controllers.student_import, bot.controllers.audit, plan, interaction.user.id, interaction
+        )
         await interaction.followup.send(embed=view.render(), view=view, ephemeral=True)

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import discord
 import pytest
 
-from external import DiscordGateway, DiscordPermissionError, GuildNotFoundError, MemberNotFoundError
+from external import ChannelNotFoundError, DiscordGateway, DiscordPermissionError, GuildNotFoundError, MemberNotFoundError
 from several_types import AUTHORIZED_ROLE, UNAUTHORIZED_ROLE
 
 GUILD_ID = 1000
@@ -62,9 +62,22 @@ class FakeMember:
 
 
 @dataclass(eq=False)
+class FakeTextChannel:
+    name: str
+    forbidden: bool = False
+    sent: list[tuple[str, object]] = field(default_factory=list)
+
+    async def send(self, text, allowed_mentions):
+        if self.forbidden:
+            raise forbidden()
+        self.sent.append((text, allowed_mentions))
+
+
+@dataclass(eq=False)
 class FakeGuild:
     name: str = "test-guild"
     roles: list[FakeRole] = field(default_factory=list)
+    text_channels: list[FakeTextChannel] = field(default_factory=list)
     members: dict[int, FakeMember] = field(default_factory=dict)
     can_create_role: bool = True
 
@@ -203,3 +216,25 @@ async def test_DMを拒否されたら_DiscordPermissionError(guild):
 async def test_存在しないユーザーへのDMは_MemberNotFoundError(guild):
     with pytest.raises(MemberNotFoundError):
         await gateway_for(guild).send_dm(str(USER_ID), "こんにちは")
+
+
+async def test_名前が一致するチャンネルに_メンションで通知せずに投稿する(guild):
+    channel = FakeTextChannel("authbot-logs")
+    guild.text_channels.append(channel)
+
+    await gateway_for(guild).send_channel_message("authbot-logs", "<@1> が登録しました")
+
+    text, allowed_mentions = channel.sent[0]
+    assert text == "<@1> が登録しました"
+    assert allowed_mentions.users is False and allowed_mentions.roles is False and allowed_mentions.everyone is False
+
+
+async def test_チャンネルが無ければ_ChannelNotFoundError(guild):
+    with pytest.raises(ChannelNotFoundError):
+        await gateway_for(guild).send_channel_message("authbot-logs", "テスト")
+
+
+async def test_チャンネルに投稿する権限が無ければ_DiscordPermissionError(guild):
+    guild.text_channels.append(FakeTextChannel("authbot-logs", forbidden=True))
+    with pytest.raises(DiscordPermissionError):
+        await gateway_for(guild).send_channel_message("authbot-logs", "テスト")

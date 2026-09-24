@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 単体 | `tests/unit/<パッケージ>/` | 1 つのモジュール (クラス・関数) の細かい振る舞いと境界値 | 対象のモジュール、値オブジェクト (`several_types`, `utils`)、副作用の無いコントローラー | ファイル (`InMemoryDatabase`)、Discord、SMTP、時計 | 常に |
 | API | `tests/api/` | 1 つのパッケージが `__init__.py` で公開している I/F の約束事 (契約) | パッケージの内部と、その下の層 (`database` は一時フォルダの実ファイル、`MailSender` はローカルの SMTP サーバー) | Discord (本物が無いため) | 常に |
-| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F15 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
+| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F16 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
 | システム | `tests/system/` + 本書 7 章の手順書 | 本物の環境で Bot 全体が動くこと | すべて (テスト用 Discord サーバー、テスト用 SMTP) | なし | リリース前に手動で |
 
 ### 2.1 各階層で確認すること / しないこと
@@ -81,7 +81,7 @@ tests/
 
 | 偽物 | 本物 | 内容 | 主な使い方 |
 | --- | --- | --- | --- |
-| `FakeDiscordGateway` | `external.DiscordGateway` | サーバーのロール・メンバー・送った DM をメモリに記録する | `add_member(user_id, roles=..., accepts_dm=False)` で準備し、`members[user_id].roles` や `last_dm(user_id)` で確認。`can_manage_roles = False` で権限不足を再現 |
+| `FakeDiscordGateway` | `external.DiscordGateway` | サーバーのロール・メンバー・送った DM・チャンネルへの投稿をメモリに記録する | `add_member(user_id, roles=..., accepts_dm=False)` で準備し、`members[user_id].roles` や `last_dm(user_id)` で確認。`can_manage_roles = False` で権限不足を再現 |
 | `FakeMailSender` | `external.MailSender` | 送ったメールを記録する | `last_code()` で認証コードを取り出す。`fail = True` で送信失敗を再現 |
 | `InMemoryDatabase` | `database.DatabaseController` | 学生情報をメモリだけに持つ | 単体テストでファイルを使わずに済ませる |
 | `FakeClock` | 現在時刻 (`datetime.now`) | 時刻を進められる | `advance(minutes=10)` で有効期限切れを再現 |
@@ -107,6 +107,7 @@ tests/
 | `today` (属性) | Bot から見た今日の日付。年度の既定値のテストで変更する |
 | `bot_becomes_ready()` | Bot の準備完了 |
 | `restart_bot()` | Bot の再起動 (学生情報ファイルと Discord の状態はそのまま) |
+| `logs()` | ログ用チャンネル (`authbot-logs`、最初からサーバーにある) に投稿されたメッセージ |
 | `register_yamada()` / `answer_questions_as_yamada(user_id)` | よく使う一連の操作 |
 
 `ADMIN_ID` ("1") のメンバーは、最初から `Administrator` ロールを持っている。
@@ -255,6 +256,7 @@ python -m pytest tests/system -v
 | ST-M24 | F14 | `data/system-test/backups/` を確認する | ここまでの操作のたびに `students-日時.msgpack` が増えている。Bot を止め、1 つ前のコピーを `data/system-test/students.msgpack` に上書きして起動すると、`/list_students` がその時点の内容になる | |
 | ST-M25 | F15 | `docs/templates/import_students.csv` を Excel で開き、2 人分を入力して「CSV (コンマ区切り)」で保存 → 管理者役で `/import_students file:(その CSV)` → [登録する] | 確認画面に 2 人が表示され、確定すると「2 人の学生情報を登録しました。」。`/list_students` に表示される | |
 | ST-M26 | F15 | 学籍番号を 7 文字にした行を含む CSV で `/import_students` | 「N 行目: 学籍番号は英数字 8 文字で…」と表示され、何も登録されない | |
+| ST-M27 | F16 | ここまでの操作の後、`authbot-logs` チャンネルを見る | 起動・登録・認証・変更・削除・年度更新・書き出し・一括登録が「誰が・何を」の形で投稿されている。キャンセルした操作は投稿されていない。メンションされた人に通知は届いていない | |
 
 ## 8. 機能とテストの対応表
 
@@ -275,6 +277,7 @@ python -m pytest tests/system -v
 | F13 学生情報の書き出し | `unit/controllers/test_export_controller.py` | `test_commands_api.py` | `test_f13_export_students.py` | ST-M23 |
 | F14 自動バックアップ | `unit/database/test_database_backup.py`, `unit/utils/test_config.py` | — | `test_f14_backup.py` | ST-M24 |
 | F15 学生情報の一括登録 | `unit/controllers/test_import_controller.py`, `test_student_controller.py`, `unit/database/test_database_controller.py` | `test_commands_api.py`, `test_fakes_contract.py` | `test_f15_import_students.py` | ST-M25, M26 |
+| F16 変更履歴のログ | `unit/controllers/test_audit_log_controller.py`, `unit/external/test_discord_gateway.py`, `unit/utils/test_config.py` | `test_fakes_contract.py` | `test_f16_audit_log.py` | ST-M27 |
 | 永続化 | `unit/database/test_database_controller.py`, `unit/several_types/test_student_info.py` | `test_database_api.py` | `test_f2_register.py`, `test_f7_rejoin.py` | ST-M14 |
 | 設定 | `unit/utils/test_config.py` | — | — | 7.2 の起動 |
 | 構造 | — | `test_package_map.py`, `test_fakes_contract.py` | — | — |

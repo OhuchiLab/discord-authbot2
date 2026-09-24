@@ -23,6 +23,7 @@ ALL_NAMES = [
     "MAIL_FROM",
     "BACKUP_DIR",
     "BACKUP_KEEP",
+    "LOG_CHANNEL_NAME",
 ]
 
 
@@ -106,3 +107,15 @@ def test_残すバックアップの数が負ならエラー(tmp_path, monkeypat
     monkeypatch.setenv("BACKUP_KEEP", "-1")
     with pytest.raises(ConfigError, match="BACKUP_KEEP"):
         load_config(env_file)
+
+
+def test_ログ用チャンネルの既定はauthbot_logs(tmp_path):
+    env_file = write_env(tmp_path, "DISCORD_TOKEN=token\nGUILD_ID=1000\nSMTP_HOST=h\nMAIL_FROM=a@example.com\n")
+    assert load_config(env_file).log_channel_name == "authbot-logs"
+
+
+def test_ログ用チャンネルを空にすると投稿しない(tmp_path):
+    env_file = write_env(
+        tmp_path, "DISCORD_TOKEN=token\nGUILD_ID=1000\nSMTP_HOST=h\nMAIL_FROM=a@example.com\nLOG_CHANNEL_NAME=\n"
+    )
+    assert load_config(env_file).log_channel_name is None

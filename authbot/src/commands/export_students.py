@@ -50,6 +50,7 @@ def setup_export_students_command(bot: AuthBot) -> None:
 
         # 個人情報を持ち出す操作なので、誰がいつ書き出したかを記録する
         logger.info("User %s exported %d students as %s", interaction.user.id, exported.student_count, format)
+        await bot.controllers.audit.students_exported(str(interaction.user.id), exported, format)
         await interaction.followup.send(
             f"{exported.student_count} 人分の学生情報を書き出しました。個人情報を含むため、取り扱いに注意してください。",
             file=discord.File(io.BytesIO(exported.data), filename=exported.filename),

@@ -8,6 +8,7 @@ Discord の操作は `external.DiscordGateway`、データの保存は `database
 | --- | --- |
 | `export_controller` | 学生情報の CSV / msgpack への書き出し (`ExportController`) |
 | `import_controller` | CSV からの学生情報の一括登録 (`ImportController`) |
+| `audit_log_controller` | 変更履歴のログ用チャンネルへの投稿 (`AuditLogController`) |
 | `bot_controllers` | コントローラー一式の組み立て (`build_controllers`, `BotControllers`) |
 | `onboarding_controller` | 参加から認証完了までの一連の流れ (`OnboardingController`) |
 | `auth_flow_controller` | DM での対話形式の認証手続き (`AuthFlowController`) |
@@ -18,6 +19,7 @@ Discord の操作は `external.DiscordGateway`、データの保存は `database
 | `year_update_controller` | 現役メンバーの年度更新 (`YearUpdateController`) |
 """
 
+from .audit_log_controller import AuditLogController
 from .auth_flow_controller import AuthFlowController, AuthReply
 from .bot_controllers import BotControllers, build_controllers
 from .export_controller import ExportController

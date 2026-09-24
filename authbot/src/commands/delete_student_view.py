@@ -19,7 +19,7 @@ import logging
 
 import discord
 
-from controllers import StudentDeleteController, StudentDeleteError
+from controllers import AuditLogController, StudentDeleteController, StudentDeleteError
 from several_types import StudentDeleteResult, StudentInfo
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ class StudentDeleteView(discord.ui.View):
     def __init__(
         self,
         controller: StudentDeleteController,
+        audit: AuditLogController,
         student: StudentInfo,
         admin_id: int,
         original_interaction: discord.Interaction,
@@ -58,12 +59,14 @@ class StudentDeleteView(discord.ui.View):
 
         Args:
             controller (StudentDeleteController): 削除の確定に使う
+            audit (AuditLogController): 確定した操作をログ用チャンネルに記録するのに使う
             student (StudentInfo): 削除する学生情報
             admin_id (int): /delete_student を実行した管理者の Discord ユーザー ID (この人だけが操作できる)
             original_interaction (discord.Interaction): /delete_student の実行 (時間切れのときに画面を書き換えるため)
         """
         super().__init__(timeout=TIMEOUT_SECONDS)
         self._controller = controller
+        self._audit = audit
         self._student = student
         self._admin_id = admin_id
         self._original_interaction = original_interaction
@@ -107,6 +110,7 @@ class StudentDeleteView(discord.ui.View):
         except StudentDeleteError as error:
             await interaction.edit_original_response(content=str(error), embed=None, view=None)
             return
+        await self._audit.student_deleted(str(self._admin_id), result)
         await interaction.edit_original_response(content=describe_result(result), embed=None, view=None)
 
     async def cancel(self, interaction: discord.Interaction) -> None:

@@ -40,6 +40,7 @@ discord-authbot2/
 │       │   ├── on_member_join.py
 │       │   └── on_message.py
 │       ├── controllers/       # 業務ロジック (Discord に依存しない)
+│       │   ├── audit_log_controller.py
 │       │   ├── bot_controllers.py
 │       │   ├── export_controller.py
 │       │   ├── import_controller.py
@@ -128,7 +129,7 @@ classDiagram
     }
     class BotControllers {
         <<frozen dataclass>>
-        student, auth_flow, role, onboarding, year_update, student_edit, student_delete
+        student, auth_flow, role, onboarding, year_update, student_edit, student_delete, export, student_import, audit
     }
     class OnboardingController {
         +welcome_new_member(user_id, display_name)
@@ -162,6 +163,16 @@ classDiagram
         +prepare(student_number, discord_id, new_...) StudentEdit
         +commit(edit) StudentEditResult
     }
+    class AuditLogController {
+        +bot_started()
+        +student_registered(actor_id, student)
+        +students_imported(actor_id, students)
+        +student_edited(actor_id, edit, result)
+        +student_deleted(actor_id, result)
+        +grades_updated(actor_id, plan, result)
+        +students_exported(actor_id, exported, format)
+        +member_authenticated(student)
+    }
     class RoleController {
         +setup_roles()
         +mark_as_unauthorized(user_id)
@@ -191,6 +202,7 @@ classDiagram
     class DiscordGateway {
         +setup_roles(definitions)
         +send_dm(user_id, text)
+        +send_channel_message(channel_name, text)
         +set_nickname(user_id, nickname)
         +add_roles(user_id, definitions)
         +remove_roles(user_id, definitions)
@@ -218,6 +230,8 @@ classDiagram
     OnboardingController --> StudentController
     OnboardingController --> RoleController
     OnboardingController --> DiscordGateway
+    OnboardingController --> AuditLogController
+    AuditLogController --> DiscordGateway
     AuthFlowController --> StudentController
     AuthFlowController --> MailSender
     StudentController --> DatabaseController
@@ -355,7 +369,7 @@ classDiagram
 | メソッド | 機能 | 処理 |
 | --- | --- | --- |
 | `welcome_new_member(user_id, display_name)` | F3 / F7 | 認証済み → `mark_as_authorized()` + DM「おかえりなさい」<br/>未認証 → `mark_as_unauthorized()` + `auth_flow.start()` + DM「ようこそ」 |
-| `receive_direct_message(user_id, text)` | F4 / F5 | `auth_flow.handle_message()` の返答を DM で送る。認証が完了したら `mark_as_authorized()` し完了を DM で送る。サーバーにいない (`MemberNotFoundError`) なら参加を案内 |
+| `receive_direct_message(user_id, text)` | F4 / F5 | `auth_flow.handle_message()` の返答を DM で送る。認証が完了したら `AuditLogController.member_authenticated()` で記録し、`mark_as_authorized()` し完了を DM で送る。サーバーにいない (`MemberNotFoundError`) なら参加を案内 |
 | `request_auth(user_id) -> str` | F6 | 認証済み → `mark_as_authorized()` し、その旨を返す<br/>未認証 → `auth_flow.start()` を DM で送る。DM を拒否されたら (`DiscordPermissionError`) 手続きを `cancel()` し、設定変更の案内を返す |
 
 DM を拒否しているメンバーへの DM 送信 (`DiscordPermissionError`) は、警告ログだけ出して処理を続ける。
@@ -474,6 +488,19 @@ stateDiagram-v2
 
 戻り値 `StudentEditResult` には、変更後の学生情報、Discord に反映したか、サーバーにいなかったか、うまくいかなかった説明が入る。
 Discord への反映に失敗しても学生情報の変更は取り消さない。
+
+#### `audit_log_controller.py` — `AuditLogController`
+
+変更履歴のログ (F16) を担当する。操作ごとのメソッドで文章を作り、`DiscordGateway.send_channel_message()` でログ用チャンネルに投稿する。
+
+- 呼び出す場所: 確認画面のある操作 (変更・削除・年度更新・一括登録) は確認画面 (`*_view.py`) の `confirm()` で確定に成功した後、
+  `/register`・`/export_students` はコマンドの成功後、認証完了は `OnboardingController.receive_direct_message()`、Bot の起動は `events.on_ready`。
+  **確定した操作だけを記録する** (キャンセル・エラーでは呼ばない)。
+- 操作した管理者は `actor_id` (Discord ユーザー ID) で受け取り、`<@ID>` で書く (投稿時に通知は飛ばない)。
+- 文章は 1 行目に「絵文字 操作名: 誰が 何を どうした」、2 行目以降に全角空白で字下げして詳細を書く。
+  変更前後は `StudentEdit.describe_changes()`、年度更新の内容は `YearUpdateCandidate.transition_text()` を使う (確認画面と同じ書き方)。
+- 2000 文字 (`MAX_MESSAGE_LENGTH`) を超える場合は、行の区切りで複数のメッセージに分ける。
+- `channel_name` が None なら何もしない。投稿に失敗しても (`DiscordOperationError`)、警告ログを出すだけで例外は出さない。
 
 #### `import_controller.py` — `ImportController`
 
@@ -626,6 +653,7 @@ Bot の外 (Discord・SMTP サーバー) とのやり取りはすべてこのパ
 | --- | --- |
 | `setup_roles(definitions)` | 名前が一致するロールが無ければ作成する |
 | `send_dm(user_id, text)` | ユーザーに DM を送る (サーバーに参加していなくても送れる) |
+| `send_channel_message(channel_name, text)` | 名前が一致するテキストチャンネルに投稿する。本文のメンションで通知が飛ばないよう `AllowedMentions.none()` を付ける |
 | `set_nickname(user_id, nickname)` | ニックネームを変更する |
 | `add_roles(user_id, definitions)` | ロールを付与する。サーバーに無いロールは作成する |
 | `remove_roles(user_id, definitions)` | 持っているロールだけを外す |
@@ -637,6 +665,7 @@ discord.py の例外は、次の例外に変換して送出する (すべて `Di
 | --- | --- | --- |
 | `GuildNotFoundError` | Bot が対象サーバーに参加していない | `client.get_guild()` が None |
 | `MemberNotFoundError` | ユーザーがサーバーにいない / 存在しない | `discord.NotFound` |
+| `ChannelNotFoundError` | その名前のテキストチャンネルが無い | `discord.utils.get(guild.text_channels, ...)` が None |
 | `DiscordPermissionError` | Bot に権限が無い / DM を拒否されている | `discord.Forbidden` |
 
 メンバーは キャッシュ (`guild.get_member`) → API (`guild.fetch_member`) の順に探す。
@@ -681,6 +710,7 @@ discord.py の例外は、次の例外に変換して送出する (すべて `Di
 | `SMTP_PASSWORD` | | | SMTP パスワード |
 | `MAIL_FROM` | `SMTP_USER` が無ければ ○ | `SMTP_USER` | 差出人アドレス |
 | `BACKUP_DIR` | | `data/backups` | バックアップの保存先。ディスクの故障に備えるなら外付けディスクや NAS を指定する |
+| `LOG_CHANNEL_NAME` | | `authbot-logs` | 変更履歴を投稿するチャンネル名。空 (`LOG_CHANNEL_NAME=`) にすると投稿しない |
 | `BACKUP_KEEP` | | `50` | 残すバックアップの数 (0 以上の整数。0 ならバックアップを取らない) |
 
 必須項目が無い、または整数・真偽値であるべき項目の形式が不正な場合は `ConfigError`。

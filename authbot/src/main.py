@@ -52,7 +52,13 @@ def main() -> None:
     )
     discord_gateway = DiscordGateway(bot, config.guild_id)
 
-    bot.controllers = build_controllers(database, mail_sender, discord_gateway, config.allowed_email_domain)
+    bot.controllers = build_controllers(
+        database,
+        mail_sender,
+        discord_gateway,
+        config.allowed_email_domain,
+        log_channel_name=config.log_channel_name,
+    )
 
     # ログの設定は上の basicConfig で済ませているため、discord.py 側の設定は行わない (log_handler=None)
     bot.run(config.discord_token, log_handler=None)
