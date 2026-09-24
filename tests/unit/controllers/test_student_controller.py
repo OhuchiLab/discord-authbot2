@@ -6,7 +6,7 @@
 
 import pytest
 
-from controllers import StudentController, StudentLinkError, StudentRegistrationError
+from controllers import StudentController, StudentEditError, StudentLinkError, StudentRegistrationError
 from several_types import Grade
 from tests.fakes import InMemoryDatabase
 
@@ -91,3 +91,99 @@ def test_1つのアカウントを2人の学生情報に紐付けることはで
 def test_存在しない学生情報には紐付けられない(controller):
     with pytest.raises(StudentLinkError):
         controller.link_discord_id("no-such-uuid", "111")
+
+
+# ----------------------------------------------------------------------
+# 学生情報の変更 (prepare_edit / apply_edit)
+# ----------------------------------------------------------------------
+
+
+def test_学籍番号で学生情報を探せる(controller):
+    student = register_yamada(controller)
+    assert controller.find_by_student_number(" ab123456 ") == student
+    assert controller.find_by_student_number("ZZ999999") is None
+
+
+def test_変更内容を作っただけでは保存しない(controller, database):
+    student = register_yamada(controller)
+    save_count = database.save_count
+
+    edit = controller.prepare_edit(student, new_name="山田 次郎", new_grade=Grade.M2)
+
+    assert (edit.before, edit.after.name, edit.after.grade) == (student, "山田 次郎", Grade.M2)
+    assert edit.changed_fields() == ["氏名", "学年"]
+    assert database.save_count == save_count
+
+
+def test_変更後の学籍番号とメールアドレスは正規化する(controller):
+    student = register_yamada(controller)
+    edit = controller.prepare_edit(student, new_student_number="cd654321", new_email="New@Shizuoka.ac.jp")
+    assert (edit.after.student_number, edit.after.email) == ("CD654321", "new@shizuoka.ac.jp")
+
+
+def test_紐付けを解除する変更を作れる(controller):
+    linked = controller.link_discord_id(register_yamada(controller).uuid, "111")
+    edit = controller.prepare_edit(linked, unlink_discord=True)
+    assert edit.after.discord_id is None
+    assert edit.unlinks_discord
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({}, "変更する項目を指定してください。"),
+        ({"new_grade": Grade.M1}, "変更する項目を指定してください。"),  # 今と同じ値
+        ({"new_name": "　"}, "氏名が空です。"),
+        ({"new_student_number": "1234"}, "学籍番号は英数字 8 文字"),
+        ({"new_email": "a@gmail.com"}, "@shizuoka.ac.jp"),
+        ({"unlink_discord": True}, "紐付いていません"),
+    ],
+)
+def test_不正な変更はエラー(controller, changes, message):
+    student = register_yamada(controller)
+    with pytest.raises(StudentEditError, match=message):
+        controller.prepare_edit(student, **changes)
+
+
+def test_他の学生と重複する学籍番号_メールアドレスには変更できない(controller):
+    yamada = register_yamada(controller)
+    controller.register_student("鈴木 花子", "CD123456", Grade.B4, "suzuki@shizuoka.ac.jp")
+    with pytest.raises(StudentEditError, match="学籍番号 CD123456 はすでに登録されています"):
+        controller.prepare_edit(yamada, new_student_number="cd123456")
+    with pytest.raises(StudentEditError, match="メールアドレス suzuki@shizuoka.ac.jp はすでに登録されています"):
+        controller.prepare_edit(yamada, new_email="suzuki@shizuoka.ac.jp")
+
+
+def test_自分自身の値とは重複扱いしない(controller):
+    yamada = register_yamada(controller)
+    edit = controller.prepare_edit(yamada, new_student_number="ab123456", new_name="山田 次郎")
+    assert edit.changed_fields() == ["氏名"]
+
+
+def test_変更を保存できる(controller, database):
+    student = register_yamada(controller)
+    edit = controller.prepare_edit(student, new_grade=Grade.M2)
+
+    saved = controller.apply_edit(edit)
+
+    assert saved.grade == Grade.M2
+    assert database.find_by_uuid(student.uuid) == saved
+
+
+def test_変更内容を作った後に学生情報が変わっていたら保存しない(controller, database):
+    student = register_yamada(controller)
+    edit = controller.prepare_edit(student, new_grade=Grade.M2)
+    controller.apply_edit(controller.prepare_edit(student, new_name="山田 次郎"))
+
+    with pytest.raises(StudentEditError, match="やり直してください"):
+        controller.apply_edit(edit)
+    assert database.find_by_uuid(student.uuid).grade == Grade.M1
+
+
+def test_変更内容を作った後に重複が生じていたら保存しない(controller):
+    student = register_yamada(controller)
+    edit = controller.prepare_edit(student, new_student_number="CD123456")
+    controller.register_student("鈴木 花子", "CD123456", Grade.B4, "suzuki@shizuoka.ac.jp")
+
+    with pytest.raises(StudentEditError, match="すでに登録されています"):
+        controller.apply_edit(edit)

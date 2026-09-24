@@ -23,7 +23,7 @@ def setup_auth_command(bot: AuthBot) -> None:
         bot (AuthBot): Bot 本体
     """
 
-    @bot.tree.command(name="auth", description="メンバー認証を開始します (DMで質問が届きます)", guild=bot.guild_object)
+    @bot.tree.command(name="auth", description="メンバー認証を始めます。Bot から DM で質問が届きます (認証済みの人はロールを付け直します)", guild=bot.guild_object)
     async def auth(interaction: discord.Interaction) -> None:
         # [F6] ロールの付け直しには時間がかかることがあるため、先に「考え中」の表示にしておく
         await interaction.response.defer(ephemeral=True, thinking=True)

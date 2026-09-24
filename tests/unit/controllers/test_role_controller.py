@@ -113,3 +113,18 @@ async def test_学年ロールを付け替えられなければ説明を返す(c
     discord.add_member(USER_ID, roles=(GRADE_ROLES[Grade.B4].name,))
     discord.can_manage_roles = False
     assert len(await controller.sync_grade_role(USER_ID, STUDENT)) == 1
+
+
+async def test_認証を取り消すと_Authorizedと学年ロールを外してUnauthorizedを付ける(controller, discord):
+    member = discord.add_member(USER_ID, roles=(AUTHORIZED_ROLE.name, GRADE_ROLES[Grade.M1].name, "他のロール"))
+
+    problems = await controller.revoke_authorization(USER_ID)
+
+    assert problems == []
+    assert member.roles == {UNAUTHORIZED_ROLE.name, "他のロール"}
+
+
+async def test_認証を取り消せなければ説明を返す(controller, discord):
+    discord.add_member(USER_ID, roles=(AUTHORIZED_ROLE.name,))
+    discord.can_manage_roles = False
+    assert len(await controller.revoke_authorization(USER_ID)) == 1

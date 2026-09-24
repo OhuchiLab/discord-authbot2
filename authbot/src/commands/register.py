@@ -11,7 +11,8 @@ import discord
 from discord import app_commands
 
 from controllers import StudentRegistrationError
-from several_types import Grade
+
+from .grade_option import GradeOption
 
 if TYPE_CHECKING:
     from bot import AuthBot
@@ -27,18 +28,22 @@ def setup_register_command(bot: AuthBot) -> None:
         bot (AuthBot): Bot 本体
     """
 
-    @bot.tree.command(name="register", description="新しいメンバーを登録します (管理者のみ)", guild=bot.guild_object)
+    @bot.tree.command(
+        name="register",
+        description="【管理者用】研究室メンバーの情報を登録します。登録された人だけが認証できます",
+        guild=bot.guild_object,
+    )
     @app_commands.describe(
-        name="氏名 (フルネーム)",
-        student_number="学籍番号 (英数字8文字)",
-        grade="学年",
-        email="大学のメールアドレス",
+        name="氏名 (例: 山田 太郎)。本人が認証時に入力する氏名と照合します",
+        student_number="学籍番号 (英数字 8 文字)",
+        grade="今の学年",
+        email="大学のメールアドレス (例: yamada.taro.21@shizuoka.ac.jp)。認証コードの送信先です",
     )
     async def register(
         interaction: discord.Interaction,
         name: str,
         student_number: str,
-        grade: Grade,
+        grade: GradeOption,
         email: str,
     ) -> None:
         # [F2] 個人情報を含むため、応答はすべて実行者にだけ見える (ephemeral) メッセージにする
