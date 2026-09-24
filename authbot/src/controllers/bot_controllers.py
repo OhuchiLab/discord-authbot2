@@ -16,6 +16,7 @@ from .auth_flow_controller import AuthFlowController
 from .onboarding_controller import OnboardingController
 from .role_controller import RoleController
 from .student_controller import StudentController
+from .student_edit_controller import StudentEditController
 from .year_update_controller import YearUpdateController
 
 
@@ -30,6 +31,7 @@ class BotControllers:
         role (RoleController): ロールの付け外し
         onboarding (OnboardingController): 参加から認証完了までの一連の流れ
         year_update (YearUpdateController): 現役メンバーの年度更新
+        student_edit (StudentEditController): 学生情報の手動変更
     """
 
     student: StudentController
@@ -37,6 +39,7 @@ class BotControllers:
     role: RoleController
     onboarding: OnboardingController
     year_update: YearUpdateController
+    student_edit: StudentEditController
 
 
 def build_controllers(
@@ -64,6 +67,12 @@ def build_controllers(
     role = RoleController(discord_gateway)
     onboarding = OnboardingController(student, auth_flow, role, discord_gateway)
     year_update = YearUpdateController(database, role, today)
+    student_edit = StudentEditController(student, role)
     return BotControllers(
-        student=student, auth_flow=auth_flow, role=role, onboarding=onboarding, year_update=year_update
+        student=student,
+        auth_flow=auth_flow,
+        role=role,
+        onboarding=onboarding,
+        year_update=year_update,
+        student_edit=student_edit,
     )

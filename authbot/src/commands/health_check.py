@@ -20,7 +20,7 @@ def setup_health_check_command(bot: AuthBot) -> None:
         bot (AuthBot): Bot 本体
     """
 
-    @bot.tree.command(name="health_check", description="Botの状態を確認します", guild=bot.guild_object)
+    @bot.tree.command(name="health_check", description="Bot が動いているか確認します", guild=bot.guild_object)
     async def health_check(interaction: discord.Interaction) -> None:
         # [F1]
         await interaction.response.send_message("I'm alive!", ephemeral=True)

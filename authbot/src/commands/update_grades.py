@@ -30,10 +30,10 @@ def setup_update_grades_command(bot: AuthBot) -> None:
 
     @bot.tree.command(
         name="update_grades",
-        description="年度の切り替えに合わせて、現役メンバーの学年を更新します (管理者のみ)",
+        description="【管理者用】年度替わりに全員の学年を 1 つ進めます。確定する前に一覧で確認・修正できます",
         guild=bot.guild_object,
     )
-    @app_commands.describe(fiscal_year="対象の年度 (例: 2027)。省略すると次の年度")
+    @app_commands.describe(fiscal_year="新しい年度 (例: 2027)。省略すると次の年度になります")
     async def update_grades(
         interaction: discord.Interaction,
         fiscal_year: app_commands.Range[int, 2000, 2100] | None = None,

@@ -130,6 +130,30 @@ class RoleController:
             return [ROLE_PERMISSION_PROBLEM]
         return []
 
+    async def revoke_authorization(self, user_id: str) -> list[str]:
+        """
+        メンバーを未認証の状態に戻す (Discord アカウントとの紐付けを解除したとき)
+
+        認証済み (Authorized) ロールと学年ロールを外し、未認証 (Unauthorized) ロールを付けます。
+        それ以外のロールとニックネームは変更しません。
+
+        Args:
+            user_id (str): 対象の Discord ユーザー ID
+
+        Returns:
+            list[str]: うまくいかなかった処理の説明。成功したら空のリスト
+
+        Raises:
+            MemberNotFoundError: メンバーがサーバーに参加していない場合
+        """
+        try:
+            await self._discord.remove_roles(user_id, [AUTHORIZED_ROLE, *GRADE_ROLES.values()])
+            await self._discord.add_roles(user_id, [UNAUTHORIZED_ROLE])
+        except DiscordPermissionError:
+            logger.error("No permission to revoke roles of user %s", user_id)
+            return [ROLE_PERMISSION_PROBLEM]
+        return []
+
     async def is_admin(self, user_id: str) -> bool:
         """
         メンバーが管理者 (Administrator ロールを持つ) かどうかを判定する
