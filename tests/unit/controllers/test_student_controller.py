@@ -187,3 +187,28 @@ def test_変更内容を作った後に重複が生じていたら保存しな�
 
     with pytest.raises(StudentEditError, match="すでに登録されています"):
         controller.apply_edit(edit)
+
+
+# ----------------------------------------------------------------------
+# 一覧 (list_students)
+# ----------------------------------------------------------------------
+
+
+def test_一覧は学年順_同じ学年は学籍番号順(controller):
+    controller.register_student("OB", "AA000001", Grade.OBOG, "ob@shizuoka.ac.jp")
+    controller.register_student("B4-2", "BB000001", Grade.B4, "b42@shizuoka.ac.jp")
+    controller.register_student("M1", "AA000002", Grade.M1, "m1@shizuoka.ac.jp")
+    controller.register_student("B4-1", "AA000003", Grade.B4, "b41@shizuoka.ac.jp")
+
+    assert [s.name for s in controller.list_students()] == ["B4-1", "B4-2", "M1", "OB"]
+
+
+def test_一覧を学年と認証状態で絞り込める(controller):
+    linked = controller.register_student("認証済み", "AA000001", Grade.B4, "a@shizuoka.ac.jp")
+    controller.link_discord_id(linked.uuid, "111")
+    controller.register_student("未認証", "AA000002", Grade.B4, "b@shizuoka.ac.jp")
+    controller.register_student("M1", "AA000003", Grade.M1, "c@shizuoka.ac.jp")
+
+    assert [s.name for s in controller.list_students(grade=Grade.B4)] == ["認証済み", "未認証"]
+    assert [s.name for s in controller.list_students(authenticated=True)] == ["認証済み"]
+    assert [s.name for s in controller.list_students(grade=Grade.B4, authenticated=False)] == ["未認証"]

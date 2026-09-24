@@ -121,6 +121,26 @@ class StudentController:
         """
         return self._database.find_by_uuid(student_uuid)
 
+    def list_students(self, grade: Grade | None = None, authenticated: bool | None = None) -> list[StudentInfo]:
+        """
+        学生情報の一覧を返す (学年順、同じ学年の中は学籍番号順)
+
+        Args:
+            grade (Grade | None): 指定すると、その学年の学生だけにする
+            authenticated (bool | None): True なら認証済み (Discord と紐付いている) だけ、False なら未認証だけにする
+
+        Returns:
+            list[StudentInfo]: 条件に合う学生情報
+        """
+        grade_order = {g: index for index, g in enumerate(Grade)}
+        students = [
+            student
+            for student in self._database.get_all()
+            if (grade is None or student.grade == grade)
+            and (authenticated is None or (student.discord_id is not None) == authenticated)
+        ]
+        return sorted(students, key=lambda s: (grade_order[s.grade], normalize_student_number(s.student_number)))
+
     def find_by_student_number(self, student_number: str) -> StudentInfo | None:
         """
         学籍番号が一致する学生情報を返す (大文字・小文字、全角・半角は区別しない)。見つからなければ None

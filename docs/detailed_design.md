@@ -24,6 +24,8 @@ discord-authbot2/
 │       │   ├── register.py
 │       │   ├── auth.py
 │       │   ├── grade_option.py        # 学年オプションの選択肢 (表示名付き)
+│       │   ├── list_students.py       # /list_students
+│       │   ├── list_students_view.py  # /list_students の一覧表示 (ページ切り替えのボタン)
 │       │   ├── edit_student.py        # /edit_student
 │       │   ├── edit_student_view.py   # /edit_student の確認画面 (確定・キャンセルのボタン)
 │       │   ├── update_grades.py       # /update_grades
@@ -244,12 +246,22 @@ classDiagram
 | `/register` | `register.py` | `name`, `student_number`, `grade` (選択式), `email` | `defer` → `RoleController.is_admin()` → `StudentController.register_student()` → 結果を返す |
 | `/auth` | `auth.py` | なし | `defer` → `OnboardingController.request_auth()` の戻り値を返す |
 | `/edit_student` | `edit_student.py` | 対象: `student_number` または `member` (どちらか一方)<br/>変更: `new_name`, `new_student_number`, `new_grade` (選択式), `new_email`, `unlink_discord` (真偽値) | `defer` → `RoleController.is_admin()` → `StudentEditController.prepare()` → 確認画面 (`StudentEditView`) を表示 |
+| `/list_students` | `list_students.py` | `grade` (選択式、省略可), `status` (認証済み / 未認証、省略可) | `defer` → `RoleController.is_admin()` → `StudentController.list_students()` → 一覧 (`StudentListView`) を表示。該当者がいなければ「条件に合う学生はいません。」 |
 | `/update_grades` | `update_grades.py` | `fiscal_year` (年度。整数 2000〜2100、省略可) | `defer` → `RoleController.is_admin()` → `YearUpdateController.create_plan()` → 確認画面 (`YearUpdateView`) を表示 |
 
 - 応答はすべて ephemeral (実行者だけに見える) とする。`/register` は個人情報を含むため特に必須。
 - 管理者用のコマンドは、説明文を「【管理者用】」で始める。説明文は Discord の上限 (100 文字) 以内とする (`tests/api/test_commands_api.py` で検査)。
 - 学年のオプションは `grade_option.GradeOption` を型に使う。Discord には「OB/OG (卒業・修了)」「教員 (TEACHER)」のような表示名の選択肢として表示され、処理には `Grade` として渡される。
 - Discord はコマンドに 3 秒以内の応答を求めるため、Discord の操作を伴うコマンドは先に `defer` (「考え中」表示) し、`followup` で結果を返す。
+
+#### `list_students_view.py` — `StudentListView(discord.ui.View)`
+
+`/list_students` の一覧表示。先頭に「全 N 人 (認証済み X 人 / 未認証 Y 人)」、続けて 1 人 1 行で
+「氏名 | 学籍番号 | 学年 | メールアドレス | Discord (メンション、未認証なら「未認証」)」を表示する。
+
+- 1 ページ 20 人 (`PAGE_SIZE`)。1 ページに収まる場合はボタンを付けない。
+- `show_page(interaction, page)`: ◀ 前へ / 次へ ▶ ボタンから呼ばれ、ページを切り替える。
+- `interaction_check(interaction)`: `/list_students` を実行した管理者以外の操作は受け付けない。
 
 #### `edit_student_view.py` — `StudentEditView(discord.ui.View)`
 
@@ -389,6 +401,7 @@ stateDiagram-v2
 | `register_student` | 1. 氏名が空でないこと、学籍番号が英数字 8 文字、メールが許可ドメインであることを確認<br/>2. 学籍番号・メールアドレスの重複を確認 (正規化して比較)<br/>3. uuid4 を採番し、学籍番号は大文字・メールは小文字にそろえて `DatabaseController.add()` | `StudentRegistrationError` |
 | `find_matching_student` | 全件から 氏名・学籍番号・学年・メール がすべて一致するものを返す (正規化して比較) | — |
 | `find_by_uuid` / `find_by_discord_id` | `DatabaseController` の同名メソッドを呼ぶ | — |
+| `list_students(grade=None, authenticated=None)` | 学生情報の一覧を、学年順 (`Grade` の定義順)・同じ学年の中は学籍番号順で返す。学年と認証の状態 (Discord と紐付いているか) で絞り込める | — |
 | `find_by_student_number` | 学籍番号が一致する学生情報を返す (正規化して比較) | — |
 | `prepare_edit(student, new_name, new_student_number, new_grade, new_email, unlink_discord)` | None の項目は変えずに変更後の `StudentInfo` を作り、`StudentEdit` (変更前・変更後) を返す。形式・重複 (自分自身を除く) を `register_student` と同じ規則で確認する。**保存はしない** | `StudentEditError` (変更なし / 形式不正 / 重複 / 紐付いていないのに解除) |
 | `apply_edit(edit)` | 保存されている学生情報が `edit.before` と同じか (確認中に変更されていないか) と、重複を再確認して `DatabaseController.update()` | `StudentEditError` |

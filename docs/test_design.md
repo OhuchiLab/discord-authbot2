@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 単体 | `tests/unit/<パッケージ>/` | 1 つのモジュール (クラス・関数) の細かい振る舞いと境界値 | 対象のモジュール、値オブジェクト (`several_types`, `utils`)、副作用の無いコントローラー | ファイル (`InMemoryDatabase`)、Discord、SMTP、時計 | 常に |
 | API | `tests/api/` | 1 つのパッケージが `__init__.py` で公開している I/F の約束事 (契約) | パッケージの内部と、その下の層 (`database` は一時フォルダの実ファイル、`MailSender` はローカルの SMTP サーバー) | Discord (本物が無いため) | 常に |
-| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F10 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
+| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F11 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
 | システム | `tests/system/` + 本書 7 章の手順書 | 本物の環境で Bot 全体が動くこと | すべて (テスト用 Discord サーバー、テスト用 SMTP) | なし | リリース前に手動で |
 
 ### 2.1 各階層で確認すること / しないこと
@@ -129,8 +129,8 @@ flowchart TD
 
 ### 5.1 例: 「管理者が学生情報を削除する /unregister コマンド」を追加する場合
 
-1. **基本設計書** の機能一覧に `F11 学生情報の削除 (管理者)` を追加する。
-2. **機能テスト** `tests/functional/test_f11_unregister.py` を書く。
+1. **基本設計書** の機能一覧に `F(次の番号) 学生情報の削除 (管理者)` を追加する。
+2. **機能テスト** `tests/functional/test_f<番号>_unregister.py` を書く。
    ```python
    async def test_管理者は学生情報を削除できる(driver):
        await driver.register_yamada()
@@ -216,7 +216,7 @@ python -m pytest tests/system -v
 | --- | --- | --- |
 | ST-A01 | Bot がテスト用サーバーに参加している | 自動 |
 | ST-A02 | Bot が使うロールがすべてサーバーにある (無ければ作成される) | 自動 |
-| ST-A03 | スラッシュコマンド 5 つがサーバーに登録されている | 自動 |
+| ST-A03 | スラッシュコマンド 6 つがサーバーに登録されている | 自動 |
 | ST-A04 | テスト担当者に DM を送れる | 自動 + 担当者の Discord に DM が届いたことを目視 |
 | ST-A05 | 認証メールを送れる | 自動 + Mailpit にメールが届いたことを目視 |
 
@@ -246,6 +246,7 @@ python -m pytest tests/system -v
 | ST-M18 | F9 | もう一度 `/update_grades` を実行する | 「〇年度の現役更新は既に実行されています。」 | |
 | ST-M19 | F10 | 管理者役で `/edit_student member:@新メンバー役 new_name:(別の氏名)` → [確定する] | 「〇〇 さんの学生情報を変更しました。」。新メンバー役のニックネームが変わる | |
 | ST-M20 | F10 | 管理者役で `/edit_student member:@新メンバー役 unlink_discord:True` → [確定する] | 新メンバー役の Authorized・学年ロールが外れ Unauthorized が付く。新メンバー役が Bot に DM を送ると「名前 (フルネーム) を教えてください。」 | |
+| ST-M21 | F11 | 管理者役で `/list_students`、続けて `/list_students status:未認証` | 自分だけに学生の一覧が表示される。2 回目は未認証の人だけが表示される | |
 
 ## 8. 機能とテストの対応表
 
@@ -261,6 +262,7 @@ python -m pytest tests/system -v
 | F8 ロールの準備 | `unit/controllers/test_role_controller.py`, `unit/external/test_discord_gateway.py` | — | `test_f8_ready.py` | ST-A01〜A03, M01 |
 | F9 現役メンバーの年度更新 | `unit/controllers/test_year_update_controller.py`, `test_role_controller.py`, `unit/database/test_database_controller.py` | `test_database_api.py` | `test_f9_year_update.py` | ST-M15〜M18 |
 | F10 学生情報の手動変更 | `unit/controllers/test_student_edit_controller.py`, `test_student_controller.py`, `test_role_controller.py` | — | `test_f10_edit_student.py` | ST-M19, M20 |
+| F11 学生情報の一覧 | `unit/controllers/test_student_controller.py` | `test_commands_api.py` | `test_f11_list_students.py` | ST-M21 |
 | 永続化 | `unit/database/test_database_controller.py`, `unit/several_types/test_student_info.py` | `test_database_api.py` | `test_f2_register.py`, `test_f7_rejoin.py` | ST-M14 |
 | 設定 | `unit/utils/test_config.py` | — | — | 7.2 の起動 |
 | 構造 | — | `test_package_map.py`, `test_fakes_contract.py` | — | — |
