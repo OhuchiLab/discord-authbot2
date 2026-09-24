@@ -17,6 +17,7 @@ class InMemoryDatabase:
 
     def __init__(self, students: list[StudentInfo] | None = None):
         self._students: list[StudentInfo] = list(students or [])
+        self._completed_fiscal_years: set[int] = set()
         self.save_count = 0
 
     def get_all(self) -> list[StudentInfo]:
@@ -41,6 +42,21 @@ class InMemoryDatabase:
                 self.save()
                 return
         raise KeyError(f"uuid {student.uuid} は存在しません")
+
+    def completed_fiscal_years(self) -> set[int]:
+        return set(self._completed_fiscal_years)
+
+    def commit_year_update(self, students: list[StudentInfo], fiscal_year: int) -> None:
+        if fiscal_year in self._completed_fiscal_years:
+            raise ValueError(f"{fiscal_year}年度はすでに実行済みです")
+        indexes = {current.uuid: index for index, current in enumerate(self._students)}
+        missing = [student.uuid for student in students if student.uuid not in indexes]
+        if missing:
+            raise KeyError(f"uuid {', '.join(missing)} は存在しません")
+        for student in students:
+            self._students[indexes[student.uuid]] = student
+        self._completed_fiscal_years.add(fiscal_year)
+        self.save()
 
     def save(self) -> None:
         self.save_count += 1

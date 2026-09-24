@@ -60,3 +60,17 @@ def test_保存後に一時ファイルが残らない(tmp_path):
     database = DatabaseController(tmp_path / "students.msgpack")
     database.add(make_student())
     assert [p.name for p in tmp_path.iterdir()] == ["students.msgpack"]
+
+
+def test_実行済みの年度は再起動後も読み込める(tmp_path):
+    filepath = tmp_path / "students.msgpack"
+    DatabaseController(filepath).commit_year_update([], 2027)
+    assert DatabaseController(filepath).completed_fiscal_years() == {2027}
+
+
+def test_年度更新に存在しない学生が含まれていたらエラーで何も保存しない(tmp_path):
+    filepath = tmp_path / "students.msgpack"
+    database = DatabaseController(filepath)
+    with pytest.raises(KeyError):
+        database.commit_year_update([make_student("no-such-uuid")], 2027)
+    assert database.completed_fiscal_years() == set()

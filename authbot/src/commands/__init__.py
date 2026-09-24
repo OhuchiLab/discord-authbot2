@@ -9,6 +9,7 @@ Discord で使用するスラッシュコマンドを定義・実装するパッ
 | `health_check` | /health_check | 全員 | Bot が動いているか確認する |
 | `register` | /register | 管理者 | メンバーの学生情報を登録する |
 | `auth` | /auth | 全員 | DM での認証手続きを (再) 開始する |
+| `update_grades` | /update_grades | 管理者 | 年度の切り替えに合わせて現役メンバーの学年を更新する (確認画面は `update_grades_view`) |
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from discord import app_commands
 from .auth import setup_auth_command
 from .health_check import setup_health_check_command
 from .register import setup_register_command
+from .update_grades import setup_update_grades_command
 
 if TYPE_CHECKING:
     from bot import AuthBot
@@ -39,6 +41,7 @@ def setup_all_commands(bot: AuthBot) -> None:
     setup_health_check_command(bot)
     setup_register_command(bot)
     setup_auth_command(bot)
+    setup_update_grades_command(bot)
 
     @bot.tree.error
     async def on_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:

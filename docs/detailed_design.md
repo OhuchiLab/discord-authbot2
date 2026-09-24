@@ -22,7 +22,9 @@ discord-authbot2/
 │       ├── commands/          # スラッシュコマンド (1 コマンド 1 ファイル)
 │       │   ├── health_check.py
 │       │   ├── register.py
-│       │   └── auth.py
+│       │   ├── auth.py
+│       │   ├── update_grades.py       # /update_grades
+│       │   └── update_grades_view.py  # /update_grades の確認画面 (ボタン・セレクトメニュー)
 │       ├── events/            # Discord イベントの処理 (1 イベント 1 ファイル)
 │       │   ├── on_ready.py
 │       │   ├── on_member_join.py
@@ -32,7 +34,8 @@ discord-authbot2/
 │       │   ├── onboarding_controller.py
 │       │   ├── auth_flow_controller.py
 │       │   ├── student_controller.py
-│       │   └── role_controller.py
+│       │   ├── role_controller.py
+│       │   └── year_update_controller.py
 │       ├── database/          # 学生情報の保存
 │       │   └── database_controller.py
 │       ├── external/          # 外部機能 (Discord API・SMTP)
@@ -42,7 +45,8 @@ discord-authbot2/
 │       │   ├── grade.py
 │       │   ├── student_info.py
 │       │   ├── auth_session.py
-│       │   └── role_definition.py
+│       │   ├── role_definition.py
+│       │   └── year_update.py
 │       └── utils/             # 便利関数
 │           ├── config.py
 │           └── validators.py
@@ -106,7 +110,7 @@ classDiagram
     }
     class BotControllers {
         <<frozen dataclass>>
-        student, auth_flow, role, onboarding
+        student, auth_flow, role, onboarding, year_update
     }
     class OnboardingController {
         +welcome_new_member(user_id, display_name)
@@ -130,7 +134,14 @@ classDiagram
         +setup_roles()
         +mark_as_unauthorized(user_id)
         +mark_as_authorized(user_id, student) list~str~
+        +sync_grade_role(user_id, student) list~str~
         +is_admin(user_id) bool
+    }
+    class YearUpdateController {
+        +default_fiscal_year() int
+        +create_plan(fiscal_year) YearUpdatePlan
+        +change_next_grade(plan, uuid, grade)
+        +commit(plan) YearUpdateResult
     }
     class DatabaseController {
         +get_all() list~StudentInfo~
@@ -138,6 +149,8 @@ classDiagram
         +find_by_discord_id(discord_id) StudentInfo
         +add(student)
         +update(student)
+        +completed_fiscal_years() set~int~
+        +commit_year_update(students, fiscal_year)
         +save()
     }
     class DiscordGateway {
@@ -157,6 +170,9 @@ classDiagram
     BotControllers --> AuthFlowController
     BotControllers --> StudentController
     BotControllers --> RoleController
+    BotControllers --> YearUpdateController
+    YearUpdateController --> DatabaseController
+    YearUpdateController --> RoleController
     OnboardingController --> AuthFlowController
     OnboardingController --> StudentController
     OnboardingController --> RoleController
@@ -211,9 +227,26 @@ classDiagram
 | `/health_check` | `health_check.py` | なし | "I'm alive!" と返す |
 | `/register` | `register.py` | `name`, `student_number`, `grade` (選択式), `email` | `defer` → `RoleController.is_admin()` → `StudentController.register_student()` → 結果を返す |
 | `/auth` | `auth.py` | なし | `defer` → `OnboardingController.request_auth()` の戻り値を返す |
+| `/update_grades` | `update_grades.py` | `fiscal_year` (年度。整数 2000〜2100、省略可) | `defer` → `RoleController.is_admin()` → `YearUpdateController.create_plan()` → 確認画面 (`YearUpdateView`) を表示 |
 
 - 応答はすべて ephemeral (実行者だけに見える) とする。`/register` は個人情報を含むため特に必須。
 - Discord はコマンドに 3 秒以内の応答を求めるため、Discord の操作を伴うコマンドは先に `defer` (「考え中」表示) し、`followup` で結果を返す。
+
+#### `update_grades_view.py` — `YearUpdateView(discord.ui.View)`
+
+`/update_grades` の確認画面。表示と操作の受け付けだけを行い、判断は `YearUpdateController` に任せる。
+操作部品は、受け取った操作を次のメソッドに渡すだけにしている (機能テストからも同じメソッドで操作する)。
+
+| 操作部品 | メソッド | 処理 |
+| --- | --- | --- |
+| (表示) | `render()` | 今のページの更新候補を埋め込み表示にする。「@メンション 氏名 / B4 → M1」、留年・卒業・変更には目印 |
+| 学生のセレクトメニュー | `select_student(interaction, uuid)` | 更新先を変更する学生を選ぶ。更新先のセレクトメニューが現れる |
+| 更新先のセレクトメニュー | `select_next_grade(interaction, grade)` | `YearUpdateController.change_next_grade()` |
+| ◀ 前へ / 次へ ▶ | `show_page(interaction, page)` | 25 人ごとのページを切り替える (Discord のセレクトメニューは 25 個まで) |
+| 確定する | `confirm(interaction)` | 画面を「更新しています…」にし、`YearUpdateController.commit()` の結果 (またはエラー) を表示する |
+| キャンセル | `cancel(interaction)` | 何も変更せず「キャンセルしました」と表示する |
+| (14 分間操作なし) | `on_timeout()` | キャンセルと同じ。Discord の応答の有効期限 (15 分) より前に画面を書き換える |
+| (全操作) | `interaction_check(interaction)` | `/update_grades` を実行した管理者以外の操作は受け付けない |
 
 ### 3.3 `events` パッケージ
 
@@ -337,8 +370,31 @@ stateDiagram-v2
 | --- | --- | --- |
 | `setup_roles()` | `DiscordGateway.setup_roles(ALL_ROLES)` | サーバー未参加・権限不足はエラーログのみ |
 | `mark_as_unauthorized(user_id)` | `Unauthorized` を付ける | 権限不足はエラーログのみ |
-| `mark_as_authorized(user_id, student)` | 1. ニックネームを `student.name` に<br/>2. `Authorized` と学年ロールを付ける<br/>3. `Unauthorized` と他の学年ロールを外す | 権限不足は利用者向けの説明を戻り値のリストに入れ、残りの処理は続ける。サーバーにいなければ `MemberNotFoundError` |
+| `mark_as_authorized(user_id, student)` | 1. ニックネームを `student.name` に<br/>2. `Authorized` を付け、`Unauthorized` を外す<br/>3. `sync_grade_role()` | 権限不足は利用者向けの説明を戻り値のリストに入れ、残りの処理は続ける。サーバーにいなければ `MemberNotFoundError` |
+| `sync_grade_role(user_id, student)` | 学生情報の学年のロールだけを付け、他の学年ロール (OB/OG を含む) を外す。ニックネームは変えない | 権限不足は説明を返す。サーバーにいなければ `MemberNotFoundError` |
 | `is_admin(user_id)` | `Administrator` ロールを持っていれば `True` | サーバーにいなければ `False` |
+
+#### `year_update_controller.py` — `YearUpdateController`
+
+現役メンバーの年度更新 (F9) を担当する。学生情報が正で、Discord のロールはその結果を反映する (一方向)。
+
+定数:
+
+| 定数 | 内容 |
+| --- | --- |
+| `DEFAULT_NEXT_GRADES` | 通常の進級規則。B4→M1, M1→M2, M2→OB/OG, D1→D2, D2→D3, D3→OB/OG。**ここにある学年の学生を「現役学生」とする** |
+| `SELECTABLE_NEXT_GRADES` | 管理者が選べる更新先。B4, M1, M2, D1, D2, D3, OB/OG |
+| `FISCAL_YEAR_START_MONTH` | 年度が始まる月 (4) |
+
+| メソッド | 処理 | 例外 (`YearUpdateError`) |
+| --- | --- | --- |
+| `default_fiscal_year()` | 今日が属する年度 (4 月始まり) の次の年度 | — |
+| `create_plan(fiscal_year=None)` | 現役学生ごとに `YearUpdateCandidate` (今の学年・既定の更新先・更新先) を作り、`YearUpdatePlan` にまとめる。**学生情報・ロールは変更しない** | 実行済みの年度 / 現役学生がいない |
+| `change_next_grade(plan, uuid, grade)` | 計画の中の 1 人の更新先を変える | 選べない学年 |
+| `commit(plan)` | 1. 年度が実行済みでないか再確認 (他の管理者が先に確定した場合)<br/>2. 計画を作った後に現役学生の顔ぶれ・学年が変わっていないか確認<br/>3. `DatabaseController.commit_year_update()` で学生情報の更新と年度の記録をまとめて保存<br/>4. 認証済みの学生について `RoleController.sync_grade_role()` | 実行済みの年度 / 学生情報が変わった (いずれも何も変更しない) |
+
+`commit()` の戻り値 `YearUpdateResult` には、更新した人数、ロールを同期した人数、サーバーにいなかった学生の氏名、ロールを付け替えられなかった説明が入る。
+ロールの同期に失敗しても学生情報の更新は取り消さない (学生情報が正のため。ロールは `/auth` で付け直せる)。
 
 ### 3.5 `database` パッケージ
 
@@ -347,6 +403,9 @@ stateDiagram-v2
 - 生成時にファイルを読み込み、全件を `list[StudentInfo]` としてメモリに持つ。ファイルが無ければ空。
 - 追加・更新のたびに `save()` でファイル全体を書き直す。
 - 入力チェックや重複判定は行わない (`StudentController` の責務)。ただし uuid の重複追加と、存在しない uuid の更新は例外にする。
+- 現役更新を実行済みの年度 (`completed_fiscal_years()`) も同じファイルに保存する。
+- `commit_year_update(students, fiscal_year)` は、学生情報の置き換えと年度の記録を **1 回の保存でまとめて** 行う。
+  年度が実行済み (`ValueError`) や存在しない uuid (`KeyError`) の場合は何も変更しない。
 
 `save()` の手順 (保存中に停止してもファイルが壊れないようにする):
 
@@ -361,25 +420,33 @@ stateDiagram-v2
 **この形式は `tests/api/test_database_api.py` で検査される。変更する場合は既存ファイルの移行方法も用意すること。**
 
 - ファイル: 設定 `DATABASE_PATH` (既定 `data/students.msgpack`)
-- 形式: msgpack。中身は次の辞書の配列 (`StudentInfo.to_dict()` / `from_dict()` で変換)。
+- 形式: msgpack。中身は次の辞書 (学生情報は `StudentInfo.to_dict()` / `from_dict()` で変換)。
 
 ```json
-[
-  {
-    "uuid": "3f1c2a9e-…",
-    "name": "山田 太郎",
-    "student_number": "AB123456",
-    "email": "yamada.taro.21@shizuoka.ac.jp",
-    "grade": "M1",
-    "discord_id": "123456789012345678"
-  }
-]
+{
+  "format_version": 2,
+  "students": [
+    {
+      "uuid": "3f1c2a9e-…",
+      "name": "山田 太郎",
+      "student_number": "AB123456",
+      "email": "yamada.taro.21@shizuoka.ac.jp",
+      "grade": "M1",
+      "discord_id": "123456789012345678"
+    }
+  ],
+  "completed_fiscal_years": [2027]
+}
 ```
+
+- 以前の形式 (上の `students` の配列だけのファイル) も読み込める。次に保存したときに新しい形式になる。
 
 | キー | 型 | 備考 |
 | --- | --- | --- |
 | `grade` | str | `Grade` の値 (`B4`, `M1`, `M2`, `D1`, `D2`, `D3`, `TEACHER`, `OB/OG`) |
+| `format_version` | int | ファイル形式のバージョン (現在 2) |
 | `discord_id` | str または nil | 未認証なら nil。読み込み時にキーが無い場合も `None` として扱う |
+| `completed_fiscal_years` | int の配列 | 現役更新を実行済みの年度 (小さい順) |
 
 内容を確認したいときは次のように読める:
 
@@ -431,6 +498,7 @@ discord.py の例外は、次の例外に変換して送出する (すべて `Di
 | `student_info.py` | `StudentInfo` (frozen dataclass) | 学生情報 1 件。変更は `dataclasses.replace()` で新しいインスタンスを作る |
 | `auth_session.py` | `AuthStep` (Enum), `AuthSession` (dataclass) | 認証手続きの段階と途中経過 |
 | `role_definition.py` | `RoleDefinition` と各ロール定数 | ロール名・色の一覧。**ロールの変更はこのファイルだけで行う** |
+| `year_update.py` | `YearUpdateCandidate`, `YearUpdatePlan` (dataclass), `YearUpdateResult` (frozen dataclass) | 現役更新の候補 (1 人分)・計画 (一覧)・確定結果。`is_changed` は既定の更新先から変更されたか |
 
 ### 3.8 `utils` パッケージ
 
@@ -574,5 +642,6 @@ sequenceDiagram
 | ロール名・色を変える | `several_types/role_definition.py` (既存サーバーのロール名は手動で合わせる) |
 | DM の文言を変える | `controllers/auth_flow_controller.py` (手続き中)、`controllers/onboarding_controller.py` (参加時・完了時) |
 | 認証コードの有効期限・試行回数を変える | `controllers/auth_flow_controller.py` の定数 |
+| 進級規則・選べる更新先を変える | `controllers/year_update_controller.py` の `DEFAULT_NEXT_GRADES` / `SELECTABLE_NEXT_GRADES` |
 | 学生情報に項目を追加する | `several_types/student_info.py` (`to_dict` / `from_dict` も。既存ファイルとの互換のため `from_dict` では `data.get()` で既定値を与える) と `tests/api/test_database_api.py` |
 | パッケージを追加する・依存を変える | パッケージマップ (基本設計書・`docs/images/package_map.png`) と `tests/api/test_package_map.py` の `ALLOWED_DEPENDENCIES` |

@@ -7,6 +7,7 @@
 | `student_info` | データベースに保存する学生情報 (`StudentInfo`) |
 | `auth_session` | DM 認証手続きの途中経過 (`AuthSession`, `AuthStep`) |
 | `role_definition` | Bot が扱う Discord ロールの定義 (`RoleDefinition` と各ロール定数) |
+| `year_update` | 現役メンバーの年度更新の候補と結果 (`YearUpdatePlan`, `YearUpdateCandidate`, `YearUpdateResult`) |
 """
 
 from .auth_session import AuthSession, AuthStep
@@ -20,3 +21,4 @@ from .role_definition import (
     RoleDefinition,
 )
 from .student_info import StudentInfo
+from .year_update import YearUpdateCandidate, YearUpdatePlan, YearUpdateResult

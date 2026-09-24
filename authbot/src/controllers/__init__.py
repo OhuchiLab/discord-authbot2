@@ -11,6 +11,7 @@ Discord の操作は `external.DiscordGateway`、データの保存は `database
 | `auth_flow_controller` | DM での対話形式の認証手続き (`AuthFlowController`) |
 | `student_controller` | 学生情報の登録・照合・Discord ID の紐付け (`StudentController`) |
 | `role_controller` | 認証状態に応じたロール・ニックネームの設定 (`RoleController`) |
+| `year_update_controller` | 現役メンバーの年度更新 (`YearUpdateController`) |
 """
 
 from .auth_flow_controller import AuthFlowController, AuthReply
@@ -18,3 +19,4 @@ from .bot_controllers import BotControllers, build_controllers
 from .onboarding_controller import OnboardingController
 from .role_controller import RoleController
 from .student_controller import StudentController, StudentLinkError, StudentRegistrationError
+from .year_update_controller import YearUpdateController, YearUpdateError

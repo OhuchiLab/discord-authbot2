@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 単体 | `tests/unit/<パッケージ>/` | 1 つのモジュール (クラス・関数) の細かい振る舞いと境界値 | 対象のモジュール、値オブジェクト (`several_types`, `utils`)、副作用の無いコントローラー | ファイル (`InMemoryDatabase`)、Discord、SMTP、時計 | 常に |
 | API | `tests/api/` | 1 つのパッケージが `__init__.py` で公開している I/F の約束事 (契約) | パッケージの内部と、その下の層 (`database` は一時フォルダの実ファイル、`MailSender` はローカルの SMTP サーバー) | Discord (本物が無いため) | 常に |
-| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F8 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
+| 機能 | `tests/functional/` | 基本設計書の機能 F1〜F9 を、利用者の操作 (参加・DM・コマンド) から結果 (ロール・DM・ファイル) まで通しで | `AuthBot`・`commands`・`events`・`controllers`・`database` (実ファイル) | `DiscordGateway`、`MailSender`、Discord から渡されるオブジェクト | 常に |
 | システム | `tests/system/` + 本書 7 章の手順書 | 本物の環境で Bot 全体が動くこと | すべて (テスト用 Discord サーバー、テスト用 SMTP) | なし | リリース前に手動で |
 
 ### 2.1 各階層で確認すること / しないこと
@@ -100,6 +100,11 @@ tests/
 | `send_dm(user_id, text)` → 最後に届いた DM | Bot への DM |
 | `post_in_server(user_id, text)` | サーバーのチャンネルへの投稿 |
 | `run_command(user_id, "register", name=..., ...)` → 応答 | スラッシュコマンドの実行 (応答が ephemeral であることも確認する) |
+| `run_command_for_response(...)` → `SentResponse` | 同上。埋め込み表示 (`embed`) や確認画面 (`view`) も確認したいとき |
+| `component_interaction(user_id)` | ボタン・セレクトメニューの操作を再現するインタラクション (`view.confirm(...)` などに渡す) |
+| `add_student(name, 学籍番号, grade, discord_id=None)` | 学生情報を登録する。`discord_id` を指定すると、認証済みでサーバーにいる状態にする |
+| `saved_grade(student)` | 学生情報ファイルに保存されている学年 |
+| `today` (属性) | Bot から見た今日の日付。年度の既定値のテストで変更する |
 | `bot_becomes_ready()` | Bot の準備完了 |
 | `restart_bot()` | Bot の再起動 (学生情報ファイルと Discord の状態はそのまま) |
 | `register_yamada()` / `answer_questions_as_yamada(user_id)` | よく使う一連の操作 |
@@ -124,8 +129,8 @@ flowchart TD
 
 ### 5.1 例: 「管理者が学生情報を削除する /unregister コマンド」を追加する場合
 
-1. **基本設計書** の機能一覧に `F9 学生情報の削除 (管理者)` を追加する。
-2. **機能テスト** `tests/functional/test_f9_unregister.py` を書く。
+1. **基本設計書** の機能一覧に `F10 学生情報の削除 (管理者)` を追加する。
+2. **機能テスト** `tests/functional/test_f10_unregister.py` を書く。
    ```python
    async def test_管理者は学生情報を削除できる(driver):
        await driver.register_yamada()
@@ -202,7 +207,7 @@ python -m pytest tests/system -v
 | --- | --- | --- |
 | ST-A01 | Bot がテスト用サーバーに参加している | 自動 |
 | ST-A02 | Bot が使うロールがすべてサーバーにある (無ければ作成される) | 自動 |
-| ST-A03 | スラッシュコマンド 3 つがサーバーに登録されている | 自動 |
+| ST-A03 | スラッシュコマンド 4 つがサーバーに登録されている | 自動 |
 | ST-A04 | テスト担当者に DM を送れる | 自動 + 担当者の Discord に DM が届いたことを目視 |
 | ST-A05 | 認証メールを送れる | 自動 + Mailpit にメールが届いたことを目視 |
 
@@ -226,6 +231,10 @@ python -m pytest tests/system -v
 | ST-M12 | F7 | 新メンバー役でサーバーを退出し、Bot を再起動してから再参加する | 質問されずに「おかえりなさい」の DM が届き、Authorized と Grade:M1 が付く | |
 | ST-M13 | F5 | 管理者役が、サーバーのオーナーを `/register` で登録し、オーナーのアカウントで `/auth` から認証を行う | 認証は完了し、「ニックネームを変更できませんでした。…」が届く | |
 | ST-M14 | 永続化 | Bot を停止し、`data/system-test/students.msgpack` を 詳細設計書 3.5 のコマンドで表示する | 新メンバー役の学生情報に `discord_id` が記録されている | |
+| ST-M15 | F9 | 管理者役で `/update_grades` (年度は省略) | 自分だけに「(次の年度)年度 現役メンバー更新」の一覧が表示され、新メンバー役が「M1 → M2」になっている | |
+| ST-M16 | F9 | 新メンバー役を選び、更新先を「M1 → M1」に変えてから [キャンセル] | 「キャンセルしました」。学生情報・ロールは変わらない | |
+| ST-M17 | F9 | もう一度 `/update_grades` を実行し、[確定する] | 「〇年度の現役更新を実行し、…」。新メンバー役の学年ロールが Grade:M2 に変わる | |
+| ST-M18 | F9 | もう一度 `/update_grades` を実行する | 「〇年度の現役更新は既に実行されています。」 | |
 
 ## 8. 機能とテストの対応表
 
@@ -239,6 +248,7 @@ python -m pytest tests/system -v
 | F6 認証の再開 | `unit/controllers/test_onboarding_controller.py` | — | `test_f6_auth_command.py` | ST-A04, M06, M07, M11 |
 | F7 再参加時の自動復元 | `unit/controllers/test_onboarding_controller.py` | — | `test_f7_rejoin.py` | ST-M12 |
 | F8 ロールの準備 | `unit/controllers/test_role_controller.py`, `unit/external/test_discord_gateway.py` | — | `test_f8_ready.py` | ST-A01〜A03, M01 |
+| F9 現役メンバーの年度更新 | `unit/controllers/test_year_update_controller.py`, `test_role_controller.py`, `unit/database/test_database_controller.py` | `test_database_api.py` | `test_f9_year_update.py` | ST-M15〜M18 |
 | 永続化 | `unit/database/test_database_controller.py`, `unit/several_types/test_student_info.py` | `test_database_api.py` | `test_f2_register.py`, `test_f7_rejoin.py` | ST-M14 |
 | 設定 | `unit/utils/test_config.py` | — | — | 7.2 の起動 |
 | 構造 | — | `test_package_map.py`, `test_fakes_contract.py` | — | — |

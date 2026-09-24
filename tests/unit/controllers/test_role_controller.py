@@ -96,3 +96,20 @@ async def test_Administratorロールを持つメンバーだけが管理者(con
     assert await controller.is_admin("1")
     assert not await controller.is_admin("2")
     assert not await controller.is_admin("not-a-member")
+
+
+async def test_学年ロールの同期ではニックネームを変えずに学年ロールだけ付け替える(controller, discord):
+    member = discord.add_member(USER_ID, roles=(AUTHORIZED_ROLE.name, GRADE_ROLES[Grade.B4].name))
+    graduated = StudentInfo("uuid-1", "山田 太郎", "AB123456", "yamada@shizuoka.ac.jp", Grade.OBOG, USER_ID)
+
+    problems = await controller.sync_grade_role(USER_ID, graduated)
+
+    assert problems == []
+    assert member.nickname is None
+    assert member.roles == {AUTHORIZED_ROLE.name, GRADE_ROLES[Grade.OBOG].name}
+
+
+async def test_学年ロールを付け替えられなければ説明を返す(controller, discord):
+    discord.add_member(USER_ID, roles=(GRADE_ROLES[Grade.B4].name,))
+    discord.can_manage_roles = False
+    assert len(await controller.sync_grade_role(USER_ID, STUDENT)) == 1
