@@ -342,7 +342,7 @@ flowchart TB
 | 観点 | discord-authbot (参考元) | discord-authbot2 (本システム) |
 | --- | --- | --- |
 | 言語 | TypeScript (discord.js) | Python (discord.py) |
-| データベース | Firebase Firestore (クラウド) | ローカルディスク上のファイル (msgpack) |
+| データベース | Firebase Firestore (クラウド) | ローカルディスク上のファイル (msgpack)。旧 Bot のデータは移行ツールで移す ([移行手順](./migration_from_firebase.md)) |
 | メール認証 | Firebase Auth の確認メール (リンクをクリック) | SMTP で 6 桁の認証コードを送信し、DM で返信してもらう |
 | 認証完了のタイミング | メール確認後、サーバーで `/auth` を実行したとき | DM で正しい認証コードを送った時点 (追加操作不要) |
 | `/auth` の役割 | 認証の完了処理 | 認証手続きの (再) 開始、認証済みならロールの付け直し |

@@ -1,0 +1,3 @@
+# 旧 Bot (Firebase) からの移行ツール (tools/firebase_migration) を実行するときだけ必要
+-r requirements.txt
+firebase-admin>=6

@@ -214,3 +214,5 @@ docs/api/
 # システムテスト用などの .env ファイル (ひな形の .env.example だけはコミットする)
 .env.*
 !.env.example
+# 旧 Bot (Firebase) のサービスアカウントの鍵 (移行ツールで使う。絶対にコミットしない)
+*firebase-adminsdk*.json

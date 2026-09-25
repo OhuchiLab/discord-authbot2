@@ -278,6 +278,7 @@ python -m pytest tests/system -v
 | F14 自動バックアップ | `unit/database/test_database_backup.py`, `unit/utils/test_config.py` | — | `test_f14_backup.py` | ST-M24 |
 | F15 学生情報の一括登録 | `unit/controllers/test_import_controller.py`, `test_student_controller.py`, `unit/database/test_database_controller.py` | `test_commands_api.py`, `test_fakes_contract.py` | `test_f15_import_students.py` | ST-M25, M26 |
 | F16 変更履歴のログ | `unit/controllers/test_audit_log_controller.py`, `unit/external/test_discord_gateway.py`, `unit/utils/test_config.py` | `test_fakes_contract.py` | `test_f16_audit_log.py` | ST-M27 |
+| 移行ツール | `unit/tools/test_firebase_migration_converter.py`, `test_firebase_migration_source.py` | — | `test_tool_firebase_migration.py` | 移行手順書の 3.1 (確認) の結果を目視 |
 | 永続化 | `unit/database/test_database_controller.py`, `unit/several_types/test_student_info.py` | `test_database_api.py` | `test_f2_register.py`, `test_f7_rejoin.py` | ST-M14 |
 | 設定 | `unit/utils/test_config.py` | — | — | 7.2 の起動 |
 | 構造 | — | `test_package_map.py`, `test_fakes_contract.py` | — | — |

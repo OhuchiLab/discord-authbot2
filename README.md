@@ -77,6 +77,7 @@ Bot は実行したユーザーの権限で動き、異常終了したときは�
 | --- | --- |
 | [基本設計書](./docs/basic_design.md) | 目的、機能一覧、業務の流れ、データ、参考元との違い |
 | [詳細設計書](./docs/detailed_design.md) | モジュールごとの処理、状態遷移、シーケンス、ファイル形式、エラー処理 |
+| [旧 Bot (Firebase) からの移行手順](./docs/migration_from_firebase.md) | 旧 Bot の学生情報を新 Bot に移す手順 (移行ツールの使い方) |
 | [テスト設計書](./docs/test_design.md) | テストの 4 階層、偽物の使い方、テスト駆動開発の手順、システムテスト手順書 |
 | API ドキュメント | 下記コマンドで `docs/api/` に生成 (docstring から自動生成) |
 

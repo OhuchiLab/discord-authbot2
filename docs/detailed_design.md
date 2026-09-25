@@ -69,6 +69,8 @@ discord-authbot2/
 │       └── utils/             # 便利関数
 │           ├── config.py
 │           └── validators.py
+├── tools/
+│   └── firebase_migration/    # 旧 Bot (Firebase) からの移行ツール (docs/migration_from_firebase.md)
 ├── tests/                     # 自動テスト (テスト設計書を参照)
 │   ├── fakes/                 # 偽物 (テストダブル)
 │   ├── unit/                  # 単体テスト
@@ -82,6 +84,7 @@ discord-authbot2/
 ├── .env.example               # 設定ファイルのひな形
 ├── requirements.txt           # 実行に必要なライブラリ
 ├── requirements-dev.txt       # 開発に必要なライブラリ
+├── requirements-migration.txt # 移行ツールに必要なライブラリ (firebase-admin)
 └── pyproject.toml             # pytest の設定
 ```
 
@@ -824,7 +827,18 @@ sequenceDiagram
 
 テストの階層・書き方・実行方法は [テスト設計書](./test_design.md) を参照。
 
-## 8. 拡張のしかた
+## 8. 移行ツール (`tools/firebase_migration/`)
+
+旧 Bot の Firestore のデータを新 Bot の学生情報ファイルに移す、1 回だけ使う道具。Bot 本体 (`authbot/src/`) の一部ではないため、
+パッケージマップの対象外とし、`firebase-admin` も Bot 本体の依存には入れない (`requirements-migration.txt`)。使い方は [移行手順](./migration_from_firebase.md)。
+
+| モジュール | 内容 |
+| --- | --- |
+| `converter.py` | `convert(members, verified_emails, student_controller)`: Firestore のドキュメント (`FirebaseMember`) を `StudentInfo` に変換する。形式・重複は `StudentController.find_registration_problems()` (/register と同じ規則) で確認し、問題のある人は `skipped` に理由付きで入れる。Discord ID はメール認証済み (`verified_emails`) で重複の無いものだけ残し、外したものは `notes` に入れる |
+| `firebase_source.py` | `load_from_firebase(credentials_path)`: Firestore の `members` コレクションと、Firebase Auth のメール認証済みアドレスを読み込む (変更はしない) |
+| `migrate.py` | コマンドラインの入口。移行先が空であることを確認 → 読み込み → 変換 → 報告。`--apply` のときだけ `DatabaseController.add_many()` で書き込む |
+
+## 9. 拡張のしかた
 
 新しい機能は [テスト設計書 5 章](./test_design.md#5-テスト駆動開発の進め方) の手順で、テストから先に書く。
 
